@@ -58,6 +58,11 @@ namespace Meybohm_REAMLS_Consolidation
             utilityLibrary.WriteToLog("Parsing and concatenation of files has been finished: " + DateTime.Now.ToString("G"));
             utilityLibrary.WriteToLog("");
 
+            utilityLibrary.WriteToLog("Running Import Process (UpdateFromXML) via URL Call: " + DateTime.Now.ToString("G"));
+            //utilityLibrary.ExecuteDataImportProcess();
+            utilityLibrary.WriteToLog("Completed Import Process (UpdateFromXML) via URL Call: " + DateTime.Now.ToString("G"));
+            utilityLibrary.WriteToLog("");
+
             utilityLibrary.EmailLogStatus();
         }
     }

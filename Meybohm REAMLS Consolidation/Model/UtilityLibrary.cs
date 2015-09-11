@@ -46,9 +46,9 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
             sbLogBuilder = new StringBuilder();
 
-            // Check directories and file locations
             this.CheckDirectoriesAndFiles();
             this.RemoveOldFiles();
+            //this.ClearMySQLData();
         }
 
         #endregion
@@ -144,6 +144,34 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// <summary>
         /// 
         /// </summary>
+        private void ClearMySQLData()
+        {
+            string strCommand = @" TRUNCATE TABLE prop_aik 
+                                   TRUNCATE TABLE photo_links_aik  
+                                   TRUNCATE TABLE aik_agents  
+                                   TRUNCATE TABLE aik_offices  
+                                   TRUNCATE TABLE aux_aik   
+
+                                   TRUNCATE TABLE prop_res   
+                                   TRUNCATE TABLE photo_links_aug   
+                                   TRUNCATE TABLE agents   
+                                   TRUNCATE TABLE offices   
+                                   TRUNCATE TABLE aux_aug ";
+
+            using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
+            {
+                using(MySqlCommand command = new MySqlCommand(strCommand, connection))
+                {
+                    connection.Open();
+                    command.ExecuteNonQuery();
+                    connection.Close();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
         public void EmailLogStatus()
         {
             string strSubject;
@@ -182,6 +210,22 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// <summary>
         /// 
         /// </summary>
+        public void ExecuteDataImportProcess()
+        {
+            string strMeybohmImportURL = Constant.MEYBOHM_IMPORT_URL;
+
+            if(!this.blnIsIncremental)
+            {
+                strMeybohmImportURL += "version=full";
+            }
+
+            WebClient client = new WebClient();
+            client.DownloadDataAsync(new Uri(Constant.MEYBOHM_IMPORT_URL));
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
         /// <param name="arrColumns"></param>
         /// <param name="intMLSType"></param>
         /// <param name="intFeedType"></param>
@@ -200,6 +244,9 @@ namespace Meybohm_REAMLS_Consolidation.Model
                     switch (intFeedType)
                     {
                         case FeedType.Residential:
+                            // Export Property Photos
+                            this.ImportPropertyPhotos(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Photo_Location]);
+
                             strCommand = @" INSERT INTO prop_aik (  propid,street_number,street_address,subdivision,city,state,zip,price_list,list_office,list_agentid,prop_type,
 				 	                                                    public_remarks,year_built,style,ext_features,int_features,lot_size,lot_desc,sqft_total,baths,baths_half,bedrooms,foundation,flooring,garage,attic,
 				 	                                                    hvac,school_elem,school_high,school_mid,photo_count,vt_url,allow_avm,builder,new_const,status) 
@@ -308,6 +355,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
                     switch (intFeedType)
                     {
                         case FeedType.Residential:
+                            this.ImportPropertyPhotos(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Photo_location]);
+
                             strCommand = @" INSERT INTO prop_res (  hvac,city,county,state,street_name,street_number,subdivision,zip,appliances,attic,basement,baths,b2_length,
 				 	                                            b2_level,b2_width,b3_length,b3_level,b3_width,b4_length,b4_level,b4_width,b5_length,b5_level,b5_width,bedrooms,breakfast_length,breakfast_level,
 				 	                                            breakfast_width,dining_length,dining_level,dining_width,driveway,ext_features,ext_finish,extra_rooms,family_length,family_level,family_width,
@@ -676,6 +725,11 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
                 strTempFile = strFile + "_" + intCount;
                 strTempFile = strTempFile.Replace(Constant.AIKEN_DOWNLOAD_FOLDER, Constant.AIKEN_ARCHIVE_FOLDER).Replace(Constant.AUGUSTA_DOWNLOAD_FOLDER, Constant.AUGUSTA_ARCHIVE_FOLDER);
+
+                if(DateTime.Now > File.GetCreationTime(strTempFile).AddDays(3))
+                {
+                    File.Delete(strTempFile);
+                }
             }
 
             File.Move(strFile, strTempFile);
@@ -1365,6 +1419,47 @@ namespace Meybohm_REAMLS_Consolidation.Model
             }
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="strMLSID"></param>
+        /// <param name="strPhotoLocations"></param>
+        /// <param name="intMLSType"></param>
+        public void ImportPropertyPhotos(string strMLSID, string strPhotoLocations)
+        {
+            string[] arrPhotoLocations = strPhotoLocations.Split(',');
+            string strCommand = string.Format(@" INSERT INTO photo_links_aik (link,propid,label,sequence,timestamp,portrait) 
+                                                 VALUES ('@photo_url','@propid','','@photo_seq','@time','False')");
+
+            using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["MeybohmServer"].ConnectionString))
+            {
+                for (int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
+                {
+                    if (!string.IsNullOrEmpty(arrPhotoLocations[intIndex]))
+                    {
+                        using (SqlCommand command = new SqlCommand(strCommand, connection))
+                        {
+                            command.CommandTimeout = 300;
+
+                            command.Parameters.AddWithValue("@photo_url", arrPhotoLocations[intIndex]);
+                            command.Parameters.AddWithValue("@photo_seq", (intIndex + 1));
+                            command.Parameters.AddWithValue("@propid", strMLSID);
+                            command.Parameters.AddWithValue("@time", DateTime.Now.ToString("G"));
+
+                            connection.Open();
+                            command.ExecuteNonQuery();
+                            connection.Close();
+                        }
+                    }
+                }
+            }
+
+            for(int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
+            {
+
+            }
+        }
+        
         /// <summary>
         /// 
         /// </summary>

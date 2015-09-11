@@ -25,6 +25,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
         public static string AUGUSTA_AGENT_HEADER = ConfigurationManager.AppSettings["AUGUSTA_AGENT_HEADER"];
         public static string OFFICE_HEADER = ConfigurationManager.AppSettings["OFFICE_HEADER"];
 
+        public static string MEYBOHM_IMPORT_URL = ConfigurationManager.AppSettings["MEYBOHM_IMPORT_URL"];
+
         public static string GOOGLE_API_STATUS_OVER_LIMIT = "OVER_QUERY_LIMIT";
     }
 
