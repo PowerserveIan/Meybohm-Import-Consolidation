@@ -31,6 +31,15 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
         private StringBuilder sbLogBuilder;
 
+        private int intTotalAikenProperties = 0;
+        private int intTotalAikenGeocodedProperties = 0;
+        private int intTotalAikenOffices = 0;
+        private int intTotalAikenAgents = 0;
+        private int intTotalAugustaProperties = 0;
+        private int intTotalAugustaGeocodedProperties = 0;
+        private int intTotalAugustaOffices = 0;
+        private int intTotalAugustaAgents = 0;
+        
         #endregion
 
         #region Constructors
@@ -137,8 +146,10 @@ namespace Meybohm_REAMLS_Consolidation.Model
             // Check the files for the day and make sure they are writable
             if (!File.Exists(Constant.LOG_FILE))
             {
-                this.WriteToLog("**** Meybohm Consolidation Program - LOG FILE (" + DateTime.Today.ToShortDateString() + ") **** ");
+                this.WriteToLog("<h1>**** Meybohm Consolidation Program - LOG FILE (" + DateTime.Today.ToShortDateString() + ") ****</h1>");
             }
+
+            this.WriteToLog("<h1>**** Log Information ****</h1>");
         }
 
         /// <summary>
@@ -190,15 +201,18 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
             mailMessage.From = fromAddress;
             mailMessage.IsBodyHtml = true;
-            mailMessage.To.Add("ian.nielson@powerserve.net");
+
+            foreach (string strEmailAddress in Constant.EMAIL_RECEIVER)
+            {
+                mailMessage.To.Add(strEmailAddress);
+            }
 
             strSubject = string.Format("Meybohm Import Process ({0}) - {1}: {2}", (blnIsIncremental) ? "Incremental" : "Full", DateTime.Now.ToString("G"), (blnErrorsFound) ? "Error Occured" : "Successful");
 
             sbMessage.Append("Hello,");
             sbMessage.Append("<br />");
             sbMessage.Append("<br />The following is the the log report for the recent execution of the Meybohm Import Process. Please see the file below for more information.");
-            sbMessage.Append("<br /><br />File: " + Constant.LOG_FILE);
-            sbMessage.Append("<br /><br /><b>Log Information</b>");
+            sbMessage.Append("<h2>File: " + Constant.LOG_FILE + "</h2>");
             sbMessage.Append(this.sbLogBuilder.ToString());
 
             mailMessage.Subject = strSubject;
@@ -679,7 +693,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
             }
             catch(WebException ex)
             {
-                this.WriteToLog("Error in Webresponse for MLSID (" + strMLSID + "): Skipping MLSID.");
+                this.WriteToLog("<br /><b><i style=\"color:red;\">Error in Webresponse for MLSID (" + strMLSID + "): Skipping MLSID.</i></b>");
             }
             catch (Exception ex)
             {
@@ -687,20 +701,20 @@ namespace Meybohm_REAMLS_Consolidation.Model
                 {
                     if (eleErrorMessage.Value == "You have exceeded your rate-limit for this API.")
                     {
-                        this.WriteToLog("Error Geocoding MLSID (" + strMLSID + "): Rate-limit exceeded, waiting one second to resume...");
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Error Geocoding MLSID (" + strMLSID + "): Rate-limit exceeded, waiting one second to resume...</i></b>");
                         Thread.Sleep(1000);
                     }
                     else
                     {
-                        this.WriteToLog("Error Geocoding MLSID (" + strMLSID + "): GOOGLE API GEOCODING DAILY QUOTA HAS BEEN REACHED");
-                        this.WriteToLog("NOTE: SKIPPING GEOCODING PROCESS FOR NEW PROPERTIES");
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Error Geocoding MLSID (" + strMLSID + "): GOOGLE API GEOCODING DAILY QUOTA HAS BEEN REACHED</i></b>");
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">NOTE: SKIPPING GEOCODING PROCESS FOR NEW PROPERTIES</i></b>");
                         this.blnGoogleMapsOverLimit = true;
                     }
                 }
                 else
                 {
-                    this.WriteToLog("Error Geocoding MLSID (" + strMLSID + "): " + ex.Message);
-                    this.WriteToLog("Error Geocoding MLSID (" + strMLSID + ") Details:: " + ex.StackTrace);
+                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Geocoding MLSID (" + strMLSID + "): " + ex.Message + "</i></b>");
+                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Geocoding MLSID (" + strMLSID + ") Details:: " + ex.StackTrace + "</i></b>");
                 }
 
                 strCoordinates = null;
@@ -962,6 +976,11 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                     if(intFeedType == FeedType.Land)
                                     {
                                         arrColumns[(int)Aiken_RES_Fields.Property_Type] = "Lots/Land";
+
+                                        if (arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] == "0")
+                                        {
+                                            arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] = "";
+                                        }
                                     }
 
                                     // Attempt to get the Geolocation for properties you already have.
@@ -971,9 +990,14 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         strGeoLocation = this.MapAddress(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Street_Number], arrColumns[(int)Aiken_RES_Fields.Address], arrColumns[(int)Aiken_RES_Fields.City], arrColumns[(int)Aiken_RES_Fields.State], arrColumns[(int)Aiken_RES_Fields.Zip_Code], MLSType.Aiken);
                                     }
 
+                                    // Increment the total properties consolidated
+                                    this.intTotalAikenProperties++;
+
                                     // If GeoLocation is not null, then add it to the columns.
                                     if(strGeoLocation != null)
                                     {
+                                        this.intTotalAikenGeocodedProperties++;
+
                                         arrColumns[(int)Aiken_RES_Fields.Latitude] = strGeoLocation[0];
                                         arrColumns[(int)Aiken_RES_Fields.Longitude] = strGeoLocation[1];
                                     }
@@ -1001,6 +1025,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Aiken_Agent_Fields.Home] = "";
                                     }
 
+                                    this.intTotalAikenAgents++;
+
                                     //this.ExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Agent);
                                 }
                                 else if (intFeedType == FeedType.Office)
@@ -1008,6 +1034,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                     arrColumns[(int)Office_Fields.Mail_Address_1] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_Address_1]);
                                     arrColumns[(int)Office_Fields.Mail_City] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_City]);
                                     arrColumns[(int)Office_Fields.Office_Name] = this.FixTitleCase(arrColumns[(int)Office_Fields.Office_Name]);
+
+                                    this.intTotalAikenOffices++;
 
                                     //this.ExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Office);
                                 }
@@ -1349,15 +1377,20 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                     }
 
                                     // Attempt to get the Geolocation for properties you already have.
-                                    strGeoLocation = this.GetMLSGeolocation(arrColumns[(int)Aiken_RES_Fields.MLS_Number], MLSType.Augusta);
+                                    strGeoLocation = this.GetMLSGeolocation(arrColumns[(int)Augusta_RES_Fields.MLS_Number], MLSType.Augusta);
                                     if(strGeoLocation == null && !this.blnGoogleMapsOverLimit)
                                     {
                                         strGeoLocation = this.MapAddress(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Street_Number], arrColumns[(int)Augusta_RES_Fields.Address], arrColumns[(int)Augusta_RES_Fields.City], arrColumns[(int)Augusta_RES_Fields.State], arrColumns[(int)Augusta_RES_Fields.Zip_Code], MLSType.Augusta);
                                     }
 
+                                    // Increment the total properties consolidated
+                                    this.intTotalAugustaProperties++;
+
                                     // If GeoLocation is not null, then add it to the columns.
                                     if(strGeoLocation != null)
                                     {
+                                        this.intTotalAugustaGeocodedProperties++;
+
                                         arrColumns[(int)Augusta_RES_Fields.Latitude] = strGeoLocation[0];
                                         arrColumns[(int)Augusta_RES_Fields.Longitude] = strGeoLocation[1];
                                     }
@@ -1385,6 +1418,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Augusta_Agent_Fields.Home] = "";
                                     }
 
+                                    this.intTotalAugustaAgents++;
+
                                     //this.ExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Agent);
                                 }
                                 else if (intFeedType == FeedType.Office)
@@ -1392,6 +1427,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                     arrColumns[(int)Office_Fields.Mail_Address_1] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_Address_1]);
                                     arrColumns[(int)Office_Fields.Mail_City] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_City]);
                                     arrColumns[(int)Office_Fields.Office_Name] = this.FixTitleCase(arrColumns[(int)Office_Fields.Office_Name]);
+
+                                    this.intTotalAugustaOffices++;
 
                                     //this.ExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Office);
                                 }
@@ -1490,8 +1527,27 @@ namespace Meybohm_REAMLS_Consolidation.Model
             using (StreamWriter file = new StreamWriter(Constant.LOG_FILE, true))
             {
                 file.WriteLine(strMessage);
-                sbLogBuilder.Append("<br />" + strMessage);
+                sbLogBuilder.Append(strMessage);
             }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public void WriteStatistics()
+        {
+            this.WriteToLog("<h2>Statistics Information</h3>");
+            this.WriteToLog("<h3>Aiken Stats</h3>");
+            this.WriteToLog("<b>Properties Consolidated:</b> " + this.intTotalAikenProperties);
+            this.WriteToLog("<br /><b>Properties Geocoded:</b> " + this.intTotalAikenGeocodedProperties + " of " + this.intTotalAikenProperties);
+            this.WriteToLog("<br /><b>Agents Consolidated:</b> " + this.intTotalAikenAgents);
+            this.WriteToLog("<br /><b>Offices Consolidated:</b> " + this.intTotalAikenOffices);
+
+            this.WriteToLog("<h3>Augusta Stats</h3>");
+            this.WriteToLog("<b>Properties Consolidated:</b> " + this.intTotalAugustaProperties);
+            this.WriteToLog("<br /><b>Properties Geocoded:</b> " + this.intTotalAugustaGeocodedProperties + " of " + this.intTotalAugustaProperties);
+            this.WriteToLog("<br /><b>Agents Consolidated:</b> " + this.intTotalAugustaAgents);
+            this.WriteToLog("<br /><b>Offices Consolidated:</b> " + this.intTotalAugustaOffices);
         }
 
         #endregion

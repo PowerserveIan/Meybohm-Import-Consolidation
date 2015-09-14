@@ -16,10 +16,9 @@ namespace Meybohm_REAMLS_Consolidation
             string[] arrFileList;
             UtilityLibrary utilityLibrary = new UtilityLibrary(blnIsIncremental);
 
-            // Begin Reading Aiken Files
             utilityLibrary.WriteToLog("");
-            utilityLibrary.WriteToLog("Parsing and concatenation of files has been started: " + DateTime.Now.ToString("G"));
-            utilityLibrary.WriteToLog("Starting to process Aiken Files...");
+            utilityLibrary.WriteToLog("<h2>Parsing and concatenation of files has been started: " + DateTime.Now.ToString("G") + "</h2>");
+            utilityLibrary.WriteToLog("<h3>1) Starting to process Aiken Files...</h3>");
             
             arrFileList = utilityLibrary.GetFilesList(CityType.Aiken, FeedType.Residential);
             utilityLibrary.ProcessAikenFiles(arrFileList, FeedType.Residential);
@@ -33,8 +32,8 @@ namespace Meybohm_REAMLS_Consolidation
             arrFileList = utilityLibrary.GetFilesList(CityType.Aiken, FeedType.Office);
             utilityLibrary.ProcessAikenFiles(arrFileList, FeedType.Office);
 
-            utilityLibrary.WriteToLog("Finished processing Aiken Files.");
-            utilityLibrary.WriteToLog("Starting to process Augusta Files...");
+            utilityLibrary.WriteToLog("<h3>1) Finished processing Aiken Files.</h3>");
+            utilityLibrary.WriteToLog("<h3>2) Starting to process Augusta Files...</h3>");
             // Begin Reading Augusta Files
             arrFileList = utilityLibrary.GetFilesList(CityType.Augusta, FeedType.Residential);
             utilityLibrary.ProcessAugustaFiles(arrFileList, FeedType.Residential);
@@ -48,20 +47,19 @@ namespace Meybohm_REAMLS_Consolidation
             arrFileList = utilityLibrary.GetFilesList(CityType.Augusta, FeedType.Office);
             utilityLibrary.ProcessAugustaFiles(arrFileList, FeedType.Office);
 
-            utilityLibrary.WriteToLog("Finished processing Augusta Files.");
-            utilityLibrary.WriteToLog("Finished processing all files for Aiken and Augusta.");
+            utilityLibrary.WriteToLog("<h3>2) Finished processing Augusta Files.</h3>");
 
-            utilityLibrary.WriteToLog("Starting Archive Process...");
+            utilityLibrary.WriteToLog("<h3>3)Starting Archive Process...</h3>");
             //utilityLibrary.ArchiveFiles();
-            utilityLibrary.WriteToLog("Finished Archive Process...");
+            utilityLibrary.WriteToLog("<h3>3)Finished Archive Process.</h3>");
 
-            utilityLibrary.WriteToLog("Parsing and concatenation of files has been finished: " + DateTime.Now.ToString("G"));
-            utilityLibrary.WriteToLog("");
-
-            utilityLibrary.WriteToLog("Running Import Process (UpdateFromXML) via URL Call: " + DateTime.Now.ToString("G"));
+            utilityLibrary.WriteToLog("<h3>4)Running Import Process (UpdateFromXML) via URL Call: " + DateTime.Now.ToString("G") + "</h3>");
             //utilityLibrary.ExecuteDataImportProcess();
-            utilityLibrary.WriteToLog("Completed Import Process (UpdateFromXML) via URL Call: " + DateTime.Now.ToString("G"));
-            utilityLibrary.WriteToLog("");
+            utilityLibrary.WriteToLog("<h3>4)Completed Import Process (UpdateFromXML) via URL Call: " + DateTime.Now.ToString("G") + "</h3>");
+            utilityLibrary.WriteToLog("<h2>Parsing and concatenation of files has been finished: " + DateTime.Now.ToString("G") + "</h2>");
+
+            // Write out the statistics
+            utilityLibrary.WriteStatistics();
 
             utilityLibrary.EmailLogStatus();
         }

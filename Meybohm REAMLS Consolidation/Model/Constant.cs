@@ -17,7 +17,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
         public static string CONSOLIDATION_FOLDER = ConfigurationManager.AppSettings["CONSOLIDATION_FOLDER"];
         public static string LOG_FOLDER = ConfigurationManager.AppSettings["LOG_FOLDER"] + DateTime.Today.ToString("MMyyyy") + "\\";
 
-        public static string LOG_FILE = LOG_FOLDER + DateTime.Today.ToString("MMddyyyy") + ".log";
+        public static string LOG_FILE = LOG_FOLDER + DateTime.Today.ToString("MMddyyyy") + ".html";
 
         public static string AIKEN_RESIDENTIAL_HEADER = ConfigurationManager.AppSettings["AIKEN_RESIDENTIAL_HEADER"];
         public static string AUGUSTA_RESIDENTIAL_HEADER = ConfigurationManager.AppSettings["AUGUSTA_RESIDENTIAL_HEADER"];
@@ -26,8 +26,9 @@ namespace Meybohm_REAMLS_Consolidation.Model
         public static string OFFICE_HEADER = ConfigurationManager.AppSettings["OFFICE_HEADER"];
 
         public static string MEYBOHM_IMPORT_URL = ConfigurationManager.AppSettings["MEYBOHM_IMPORT_URL"];
-
+        
         public static string GOOGLE_API_STATUS_OVER_LIMIT = "OVER_QUERY_LIMIT";
+        public static string[] EMAIL_RECEIVER = ConfigurationManager.AppSettings["EMAIL_RECEIVER"].Split(';');
     }
 
     public enum MLSType
