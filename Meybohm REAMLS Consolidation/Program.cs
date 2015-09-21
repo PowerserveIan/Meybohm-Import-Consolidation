@@ -50,11 +50,11 @@ namespace Meybohm_REAMLS_Consolidation
             utilityLibrary.WriteToLog("<h3>2) Finished processing Augusta Files.</h3>");
 
             utilityLibrary.WriteToLog("<h3>3)Starting Archive Process...</h3>");
-            //utilityLibrary.ArchiveFiles();
+            utilityLibrary.ArchiveFiles();
             utilityLibrary.WriteToLog("<h3>3)Finished Archive Process.</h3>");
 
             utilityLibrary.WriteToLog("<h3>4)Running Import Process (UpdateFromXML) via URL Call: " + DateTime.Now.ToString("G") + "</h3>");
-            //utilityLibrary.ExecuteDataImportProcess();
+            utilityLibrary.ExecuteDataImportProcess();
             utilityLibrary.WriteToLog("<h3>4)Completed Import Process (UpdateFromXML) via URL Call: " + DateTime.Now.ToString("G") + "</h3>");
             utilityLibrary.WriteToLog("<h2>Parsing and concatenation of files has been finished: " + DateTime.Now.ToString("G") + "</h2>");
 

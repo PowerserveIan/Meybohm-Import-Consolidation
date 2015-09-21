@@ -28,6 +28,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
         public static string MEYBOHM_IMPORT_URL = ConfigurationManager.AppSettings["MEYBOHM_IMPORT_URL"];
         
         public static string GOOGLE_API_STATUS_OVER_LIMIT = "OVER_QUERY_LIMIT";
+        public static string GOOGLE_API_ZERO_RESULTS = "ZERO_RESULTS";
         public static string[] EMAIL_RECEIVER = ConfigurationManager.AppSettings["EMAIL_RECEIVER"].Split(';');
     }
 

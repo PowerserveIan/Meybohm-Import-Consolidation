@@ -227,14 +227,32 @@ namespace Meybohm_REAMLS_Consolidation.Model
         public void ExecuteDataImportProcess()
         {
             string strMeybohmImportURL = Constant.MEYBOHM_IMPORT_URL;
+            string strServiceResponse = "";
 
             if(!this.blnIsIncremental)
             {
                 strMeybohmImportURL += "version=full";
             }
 
-            WebClient client = new WebClient();
-            client.DownloadDataAsync(new Uri(Constant.MEYBOHM_IMPORT_URL));
+            this.WriteToLog("Running URL: " + strMeybohmImportURL);
+
+            try
+            {
+                WebRequest webRequest = WebRequest.Create(new Uri(Constant.MEYBOHM_IMPORT_URL));
+                webRequest.Timeout = 4 * 60 * 60 * 1000; // 4 hours
+                WebResponse webResponse = webRequest.GetResponse();
+                Stream streamData = webResponse.GetResponseStream();
+                using (StreamReader srReader = new StreamReader(streamData))
+                {
+                    strServiceResponse = srReader.ReadToEnd();
+                }
+                this.WriteToLog("<br />Web Service Response: " + strServiceResponse);
+            }
+            catch(Exception ex)
+            {
+                this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running UpdateFromXML Web Service: " + ex.Message + "</i></b>");
+                this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running UpdateFromXML Web Service Details: " + ex.StackTrace + "</i></b>");
+            }
         }
 
         /// <summary>
@@ -711,10 +729,14 @@ namespace Meybohm_REAMLS_Consolidation.Model
                         this.blnGoogleMapsOverLimit = true;
                     }
                 }
+                else if (eleStatus.Value == Constant.GOOGLE_API_ZERO_RESULTS)
+                {
+                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Geocoding MLSID (" + strMLSID + "): Unable to geocode property address (" + strFullAddress + ").</i></b>");
+                }
                 else
                 {
                     this.WriteToLog("<br /><b><i style=\"color:red;\">Error Geocoding MLSID (" + strMLSID + "): " + ex.Message + "</i></b>");
-                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Geocoding MLSID (" + strMLSID + ") Details:: " + ex.StackTrace + "</i></b>");
+                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Geocoding MLSID (" + strMLSID + ") Details: " + ex.StackTrace + "</i></b>");
                 }
 
                 strCoordinates = null;
@@ -735,17 +757,18 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
             while (File.Exists(strTempFile))
             {
+                if (DateTime.Now > File.GetCreationTime(strTempFile).AddDays(3))
+                {
+                    File.Delete(strTempFile);
+                }
+
                 intCount++;
 
                 strTempFile = strFile + "_" + intCount;
                 strTempFile = strTempFile.Replace(Constant.AIKEN_DOWNLOAD_FOLDER, Constant.AIKEN_ARCHIVE_FOLDER).Replace(Constant.AUGUSTA_DOWNLOAD_FOLDER, Constant.AUGUSTA_ARCHIVE_FOLDER);
-
-                if(DateTime.Now > File.GetCreationTime(strTempFile).AddDays(3))
-                {
-                    File.Delete(strTempFile);
-                }
             }
 
+            this.WriteToLog("<br />Moving: <b>" + strFile + "</b> to <b>" + strTempFile + "</b>");
             File.Move(strFile, strTempFile);
         }
 
@@ -758,11 +781,36 @@ namespace Meybohm_REAMLS_Consolidation.Model
             string strConsolidationFolder = Constant.CONSOLIDATION_FOLDER;
             string strArchiveFolder = Constant.AIKEN_ARCHIVE_FOLDER;
             string strFileName, strFullFilePath;
+            string strFeedType;
             string[] strGeoLocation;
             bool blnWriteHeader = false;
             bool blnSkipHeader = true;
 
             string[] arrColumns = null;
+
+            if (arrFilePaths.Length == 0)
+            {
+                strFeedType = "";
+
+                switch(intFeedType)
+                {
+                    case FeedType.Agent:
+                        strFeedType = "Agent";
+                        break;
+                    case FeedType.Land:
+                        strFeedType = "Land";
+                        break;
+                    case FeedType.Office:
+                        strFeedType = "Office";
+                        break;
+                    case FeedType.Residential:
+                        strFeedType = "Residential";
+                        break;
+                }
+
+                this.WriteToLog(String.Format("<br /><b>No Files Found for Aiken {0}.</b>", strFeedType));
+                return;
+            }
 
             // Determine the columns for the file feeds
             strFileName = "";
@@ -1072,11 +1120,36 @@ namespace Meybohm_REAMLS_Consolidation.Model
             string strConsolidationFolder = Constant.CONSOLIDATION_FOLDER;
             string strArchiveFolder = Constant.AUGUSTA_ARCHIVE_FOLDER;
             string strFileName, strFullFilePath;
+            string strFeedType;
             bool blnWriteHeader = false;
             bool blnSkipHeader = true;
 
             string[] arrColumns = null;
             string[] strGeoLocation;
+
+            if (arrFilePaths.Length == 0)
+            {
+                strFeedType = "";
+
+                switch (intFeedType)
+                {
+                    case FeedType.Agent:
+                        strFeedType = "Agent";
+                        break;
+                    case FeedType.Land:
+                        strFeedType = "Land";
+                        break;
+                    case FeedType.Office:
+                        strFeedType = "Office";
+                        break;
+                    case FeedType.Residential:
+                        strFeedType = "Residential";
+                        break;
+                }
+
+                this.WriteToLog(String.Format("<br /><b>No Files Found for Augusta {0}.</b>", strFeedType));
+                return;
+            }
 
             // Determine the columns for the file feeds
             strFileName = "";
