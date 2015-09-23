@@ -39,6 +39,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
         private int intTotalAugustaGeocodedProperties = 0;
         private int intTotalAugustaOffices = 0;
         private int intTotalAugustaAgents = 0;
+
+        private Task[] taskPool = new Task[25];
         
         #endregion
 
@@ -57,7 +59,11 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
             this.CheckDirectoriesAndFiles();
             this.RemoveOldFiles();
-            //this.ClearMySQLData();
+
+            if(!this.blnIsIncremental)
+            {
+                this.ClearMySQLData();
+            }
         }
 
         #endregion
@@ -157,25 +163,36 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// </summary>
         private void ClearMySQLData()
         {
-            string strCommand = @" TRUNCATE TABLE prop_aik 
-                                   TRUNCATE TABLE photo_links_aik  
-                                   TRUNCATE TABLE aik_agents  
-                                   TRUNCATE TABLE aik_offices  
-                                   TRUNCATE TABLE aux_aik   
+            string strCommand = @" TRUNCATE TABLE prop_aik;
+                                   TRUNCATE TABLE photo_links_aik; 
+                                   TRUNCATE TABLE aik_agents;
+                                   TRUNCATE TABLE aik_offices;  
+                                   TRUNCATE TABLE aux_aik;
+                                   TRUNCATE TABLE aux_aik_agents;
+                                   TRUNCATE TABLE aux_aik_offices;   
 
-                                   TRUNCATE TABLE prop_res   
-                                   TRUNCATE TABLE photo_links_aug   
-                                   TRUNCATE TABLE agents   
-                                   TRUNCATE TABLE offices   
-                                   TRUNCATE TABLE aux_aug ";
+                                   TRUNCATE TABLE prop_res;   
+                                   TRUNCATE TABLE photo_links_aug;   
+                                   TRUNCATE TABLE agents;   
+                                   TRUNCATE TABLE offices;   
+                                   TRUNCATE TABLE aux_aug;
+                                   TRUNCATE TABLE aux_agents;
+                                   TRUNCATE TABLE aux_offices; ";
 
             using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
             {
                 using(MySqlCommand command = new MySqlCommand(strCommand, connection))
                 {
-                    connection.Open();
-                    command.ExecuteNonQuery();
-                    connection.Close();
+                    try
+                    {
+                        connection.Open();
+                        command.ExecuteNonQuery();
+                        connection.Close();
+                    }
+                    catch (Exception ex)
+                    {
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running ClearMySQLData SQL - Details: " + ex.Message + "</i></b>");
+                    }
                 }
             }
         }
@@ -266,301 +283,335 @@ namespace Meybohm_REAMLS_Consolidation.Model
             string strCommand = "";
             string strCommandSupport = "";
 
-            using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
+            try
             {
-                MySqlCommand command = connection.CreateCommand();
-                MySqlCommand commandSupport = connection.CreateCommand();
-
-                if (intMLSType == MLSType.Aiken)
+                using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
                 {
-                    switch (intFeedType)
+                    MySqlCommand command = connection.CreateCommand();
+                    MySqlCommand commandSupport = connection.CreateCommand();
+
+                    string strAgentId = "";
+
+                    if (intMLSType == MLSType.Aiken)
                     {
-                        case FeedType.Residential:
-                            // Export Property Photos
-                            this.ImportPropertyPhotos(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Photo_Location]);
+                        switch (intFeedType)
+                        {
+                            case FeedType.Residential:
+                                // Export Property Photos
+                                this.ImportPropertyPhotos(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Photo_Location]);
 
-                            strCommand = @" INSERT INTO prop_aik (  propid,street_number,street_address,subdivision,city,state,zip,price_list,list_office,list_agentid,prop_type,
-				 	                                                    public_remarks,year_built,style,ext_features,int_features,lot_size,lot_desc,sqft_total,baths,baths_half,bedrooms,foundation,flooring,garage,attic,
-				 	                                                    hvac,school_elem,school_high,school_mid,photo_count,vt_url,allow_avm,builder,new_const,status) 
-                                                VALUES (@propid,@street_number,@street_name,@subdivision,@city,@state,@zip,
-				 	                                    @price_list,@list_office,@list_agentid,@prop_type,@public_remarks,@year_built,@style,@ext_features,@int_features,@lot_size,
-				 	                                    @lot_desc,@sqft_total,@baths,@baths_half,@bedrooms,@foundation,@flooring,@garage,@attic,@hvac,@school_elem,@school_high,
-				 	                                    @school_mid,@photo_count,@vt_url,@allow_avm,@builder,@new_const,@status)";
-                            strCommandSupport = @"  INSERT INTO aux_aik (propid,updated,directions,acres_total) VALUES (@propid,'N',@directions,@acres_total)";
+                                strCommand = @" INSERT INTO prop_aik (  propid,street_number,street_address,subdivision,city,state,zip,price_list,list_office,list_agentid,prop_type,
+				 	                                                        public_remarks,year_built,style,ext_features,int_features,lot_size,lot_desc,sqft_total,baths,baths_half,bedrooms,foundation,flooring,garage,attic,
+				 	                                                        hvac,school_elem,school_high,school_mid,photo_count,vt_url,allow_avm,builder,new_const,status) 
+                                                    VALUES (@propid,@street_number,@street_name,@subdivision,@city,@state,@zip,
+				 	                                        @price_list,@list_office,@list_agentid,@prop_type,@public_remarks,@year_built,@style,@ext_features,@int_features,@lot_size,
+				 	                                        @lot_desc,@sqft_total,@baths,@baths_half,@bedrooms,@foundation,@flooring,@garage,@attic,@hvac,@school_elem,@school_high,
+				 	                                        @school_mid,@photo_count,@vt_url,@allow_avm,@builder,@new_const,@status)";
+                                strCommandSupport = @"  INSERT INTO aux_aik (propid,updated,directions,acres_total) VALUES (@propid,'N',@directions,@acres_total)";
 
-                            command.CommandText = strCommand;
-                            commandSupport.CommandText = strCommandSupport;
+                                command.CommandText = strCommand;
+                                commandSupport.CommandText = strCommandSupport;
 
-                            command.Parameters.AddWithValue("@propid", arrColumns[(int)Aiken_RES_Fields.MLS_Number]);
-                            command.Parameters.AddWithValue("@street_number", arrColumns[(int)Aiken_RES_Fields.Street_Number]);
-                            command.Parameters.AddWithValue("@street_name", arrColumns[(int)Aiken_RES_Fields.Address]);
-                            command.Parameters.AddWithValue("@subdivision", arrColumns[(int)Aiken_RES_Fields.Town_Subdivision]);
-                            command.Parameters.AddWithValue("@city", arrColumns[(int)Aiken_RES_Fields.City]);
-                            command.Parameters.AddWithValue("@state", arrColumns[(int)Aiken_RES_Fields.State]);
-                            command.Parameters.AddWithValue("@zip", arrColumns[(int)Aiken_RES_Fields.Zip_Code]);
-                            command.Parameters.AddWithValue("@price_list", arrColumns[(int)Aiken_RES_Fields.List_Price]);
-                            command.Parameters.AddWithValue("@list_office", arrColumns[(int)Aiken_RES_Fields.Listing_Office]);
-                            command.Parameters.AddWithValue("@list_agentid", arrColumns[(int)Aiken_RES_Fields.LA_ID]);
-                            command.Parameters.AddWithValue("@prop_type", arrColumns[(int)Aiken_RES_Fields.Property_Type]);
-                            command.Parameters.AddWithValue("@public_remarks", arrColumns[(int)Aiken_RES_Fields.Property_Description]);
-                            command.Parameters.AddWithValue("@year_built", arrColumns[(int)Aiken_RES_Fields.Year_Built]);
-                            command.Parameters.AddWithValue("@style", arrColumns[(int)Aiken_RES_Fields.Style]);
-                            command.Parameters.AddWithValue("@ext_features", arrColumns[(int)Aiken_RES_Fields.Exterior_Features]);
-                            command.Parameters.AddWithValue("@int_features", arrColumns[(int)Aiken_RES_Fields.Interior_Features]);
-                            command.Parameters.AddWithValue("@lot_size", DBNull.Value);
-                            command.Parameters.AddWithValue("@lot_desc", DBNull.Value);
-                            command.Parameters.AddWithValue("@sqft_total", arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt]);
-                            command.Parameters.AddWithValue("@baths", arrColumns[(int)Aiken_RES_Fields.Full_Baths]);
-                            command.Parameters.AddWithValue("@baths_half", arrColumns[(int)Aiken_RES_Fields.Half_Baths]);
-                            command.Parameters.AddWithValue("@bedrooms", arrColumns[(int)Aiken_RES_Fields.Bedrooms]);
-                            command.Parameters.AddWithValue("@foundation", arrColumns[(int)Aiken_RES_Fields.Foundation_Basement]);
-                            command.Parameters.AddWithValue("@garage", arrColumns[(int)Aiken_RES_Fields.Garage]);
-                            command.Parameters.AddWithValue("@attic", arrColumns[(int)Aiken_RES_Fields.Attic]);
-                            command.Parameters.AddWithValue("@hvac", arrColumns[(int)Aiken_RES_Fields.Air_Conditioning]);
-                            command.Parameters.AddWithValue("@school_elem", arrColumns[(int)Aiken_RES_Fields.Elementary_School]);
-                            command.Parameters.AddWithValue("@school_high", arrColumns[(int)Aiken_RES_Fields.High_School]);
-                            command.Parameters.AddWithValue("@school_mid", arrColumns[(int)Aiken_RES_Fields.Middle_School]);
-                            command.Parameters.AddWithValue("@photo_count", arrColumns[(int)Aiken_RES_Fields.Photo_Location].Split(',').Count());
-                            command.Parameters.AddWithValue("@vt_url", arrColumns[(int)Aiken_RES_Fields.Virtual_Tour]);
-                            command.Parameters.AddWithValue("@allow_avm", DBNull.Value);
-                            command.Parameters.AddWithValue("@builder", arrColumns[(int)Aiken_RES_Fields.Builder_Name]);
-                            command.Parameters.AddWithValue("@new_const", arrColumns[(int)Aiken_RES_Fields.New_Construction]);
-                            command.Parameters.AddWithValue("@status", arrColumns[(int)Aiken_RES_Fields.Property_Status]);
+                                if (arrColumns[(int)Aiken_RES_Fields.LA_ID].Split('-').Length >= 2)
+                                {
+                                    strAgentId = arrColumns[(int)Aiken_RES_Fields.LA_ID].Split('-')[1];
+                                }
 
-                            commandSupport.Parameters.AddWithValue("@propid", arrColumns[(int)Aiken_RES_Fields.MLS_Number]);
-                            commandSupport.Parameters.AddWithValue("@directions", arrColumns[(int)Aiken_RES_Fields.Directions]);
-                            commandSupport.Parameters.AddWithValue("@acres_total", arrColumns[(int)Aiken_RES_Fields.Total_Acres]);
+                                command.Parameters.AddWithValue("@propid", arrColumns[(int)Aiken_RES_Fields.MLS_Number]);
+                                command.Parameters.AddWithValue("@street_number", arrColumns[(int)Aiken_RES_Fields.Street_Number]);
+                                command.Parameters.AddWithValue("@street_name", arrColumns[(int)Aiken_RES_Fields.Address]);
+                                command.Parameters.AddWithValue("@subdivision", arrColumns[(int)Aiken_RES_Fields.Town_Subdivision]);
+                                command.Parameters.AddWithValue("@city", arrColumns[(int)Aiken_RES_Fields.City]);
+                                command.Parameters.AddWithValue("@state", arrColumns[(int)Aiken_RES_Fields.State]);
+                                command.Parameters.AddWithValue("@zip", arrColumns[(int)Aiken_RES_Fields.Zip_Code]);
+                                command.Parameters.AddWithValue("@price_list", arrColumns[(int)Aiken_RES_Fields.List_Price]);
+                                command.Parameters.AddWithValue("@list_office", arrColumns[(int)Aiken_RES_Fields.Listing_Office]);
+                                command.Parameters.AddWithValue("@list_agentid", strAgentId);
+                                command.Parameters.AddWithValue("@prop_type", "R");
+                                command.Parameters.AddWithValue("@public_remarks", arrColumns[(int)Aiken_RES_Fields.Property_Description]);
+                                command.Parameters.AddWithValue("@year_built", arrColumns[(int)Aiken_RES_Fields.Year_Built]);
+                                command.Parameters.AddWithValue("@style", arrColumns[(int)Aiken_RES_Fields.Style]);
+                                command.Parameters.AddWithValue("@ext_features", arrColumns[(int)Aiken_RES_Fields.Exterior_Features]);
+                                command.Parameters.AddWithValue("@int_features", arrColumns[(int)Aiken_RES_Fields.Interior_Features]);
+                                command.Parameters.AddWithValue("@flooring", arrColumns[(int)Aiken_RES_Fields.Floors]);
+                                command.Parameters.AddWithValue("@lot_size", DBNull.Value);
+                                command.Parameters.AddWithValue("@lot_desc", DBNull.Value);
+                                command.Parameters.AddWithValue("@sqft_total", arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt]);
+                                command.Parameters.AddWithValue("@baths", arrColumns[(int)Aiken_RES_Fields.Full_Baths]);
+                                command.Parameters.AddWithValue("@baths_half", arrColumns[(int)Aiken_RES_Fields.Half_Baths]);
+                                command.Parameters.AddWithValue("@bedrooms", arrColumns[(int)Aiken_RES_Fields.Bedrooms]);
+                                command.Parameters.AddWithValue("@foundation", arrColumns[(int)Aiken_RES_Fields.Foundation_Basement]);
+                                command.Parameters.AddWithValue("@garage", arrColumns[(int)Aiken_RES_Fields.Garage]);
+                                command.Parameters.AddWithValue("@attic", arrColumns[(int)Aiken_RES_Fields.Attic]);
+                                command.Parameters.AddWithValue("@hvac", arrColumns[(int)Aiken_RES_Fields.Air_Conditioning]);
+                                command.Parameters.AddWithValue("@school_elem", arrColumns[(int)Aiken_RES_Fields.Elementary_School]);
+                                command.Parameters.AddWithValue("@school_high", arrColumns[(int)Aiken_RES_Fields.High_School]);
+                                command.Parameters.AddWithValue("@school_mid", arrColumns[(int)Aiken_RES_Fields.Middle_School]);
+                                command.Parameters.AddWithValue("@photo_count", arrColumns[(int)Aiken_RES_Fields.Photo_Location].Split(',').Count());
+                                command.Parameters.AddWithValue("@vt_url", arrColumns[(int)Aiken_RES_Fields.Virtual_Tour]);
+                                command.Parameters.AddWithValue("@allow_avm", DBNull.Value);
+                                command.Parameters.AddWithValue("@builder", arrColumns[(int)Aiken_RES_Fields.Builder_Name]);
+                                command.Parameters.AddWithValue("@new_const", arrColumns[(int)Aiken_RES_Fields.New_Construction]);
+                                command.Parameters.AddWithValue("@status", arrColumns[(int)Aiken_RES_Fields.Property_Status]);
 
-                            break;
-                        case FeedType.Agent:
-                            strCommand = @" INSERT INTO aik_agents (agentid,officeid,name_first,name_last,email,url,uid) 
-			                                    VALUES (@agent_id,@agent_office,@agent_first,@agent_last,@agent_phone,@agent_web,@agent_uid)";
-                            strCommandSupport = @"  INSERT INTO aux_aik_agents (uid,phone_home,address,city,state,zip) 
-			                                            VALUES (@agent_uid,@agent_home,@agent_street,@agent_city,@agent_state,@agent_zip)";
+                                commandSupport.Parameters.AddWithValue("@propid", arrColumns[(int)Aiken_RES_Fields.MLS_Number]);
+                                commandSupport.Parameters.AddWithValue("@directions", arrColumns[(int)Aiken_RES_Fields.Directions]);
+                                commandSupport.Parameters.AddWithValue("@acres_total", arrColumns[(int)Aiken_RES_Fields.Total_Acres]);
 
-                            command.CommandText = strCommand;
-                            commandSupport.CommandText = strCommandSupport;
+                                break;
+                            case FeedType.Agent:
+                                strCommand = @" INSERT INTO aik_agents (agentid,officeid,name_first,name_last,email,url,uid) 
+			                                        VALUES (@agent_id,@agent_office,@agent_first,@agent_last,@agent_email,@agent_web,@agent_uid)";
+                                strCommandSupport = @"  INSERT INTO aux_aik_agents (uid,phone_home,address,city,state,zip) 
+			                                                VALUES (@agent_uid,@agent_home,@agent_street,@agent_city,@agent_state,@agent_zip)";
 
-                            command.Parameters.AddWithValue("@agentid", arrColumns[(int)Aiken_Agent_Fields.AGENT_ID]);
-                            command.Parameters.AddWithValue("@officeid", arrColumns[(int)Aiken_Agent_Fields.Office_ID]);
-                            command.Parameters.AddWithValue("@name_first", arrColumns[(int)Aiken_Agent_Fields.First_Name]);
-                            command.Parameters.AddWithValue("@name_last", arrColumns[(int)Aiken_Agent_Fields.Last_Name]);
-                            command.Parameters.AddWithValue("@email", arrColumns[(int)Aiken_Agent_Fields.Agent_Email]);
-                            command.Parameters.AddWithValue("@url", arrColumns[(int)Aiken_Agent_Fields.Web_Address]);
-                            command.Parameters.AddWithValue("@uid", arrColumns[(int)Aiken_Agent_Fields.AGENT_ID]);
+                                command.CommandText = strCommand;
+                                commandSupport.CommandText = strCommandSupport;
 
-                            commandSupport.Parameters.AddWithValue("@agent_uid", arrColumns[(int)Aiken_Agent_Fields.AGENT_ID]);
-                            commandSupport.Parameters.AddWithValue("@agent_home", arrColumns[(int)Aiken_Agent_Fields.Home]);
-                            commandSupport.Parameters.AddWithValue("@agent_street", arrColumns[(int)Aiken_Agent_Fields.Mail_Address_1]);
-                            commandSupport.Parameters.AddWithValue("@agent_city", arrColumns[(int)Aiken_Agent_Fields.Mail_City]);
-                            commandSupport.Parameters.AddWithValue("@agent_state", arrColumns[(int)Aiken_Agent_Fields.Mail_State]);
-                            commandSupport.Parameters.AddWithValue("@agent_zip", arrColumns[(int)Aiken_Agent_Fields.Mail_Zip_Code]);
+                                if (arrColumns[(int)Aiken_Agent_Fields.AGENT_ID].Split('-').Length >= 2)
+                                {
+                                    strAgentId = arrColumns[(int)Aiken_Agent_Fields.AGENT_ID].Split('-')[1];
+                                }
 
-                            break;
-                        case FeedType.Office:
-                            strCommand = @" INSERT INTO aik_offices (officeid,office_name,zip,url) 
-			                            VALUES (@office_id,@office_name,@zip,@office_web)";
-                            strCommandSupport = @"  INSERT INTO aux_aik_offices (officeid,address,city,state,zip,phone,fax) 
-			                                    VALUES (@office_id,@office_street,@office_city,@office_state,@office_zip,@office_phone,@office_fax)";
+                                command.Parameters.AddWithValue("@agent_id", strAgentId);
+                                command.Parameters.AddWithValue("@agent_office", arrColumns[(int)Aiken_Agent_Fields.Office_ID]);
+                                command.Parameters.AddWithValue("@agent_first", arrColumns[(int)Aiken_Agent_Fields.First_Name]);
+                                command.Parameters.AddWithValue("@agent_last", arrColumns[(int)Aiken_Agent_Fields.Last_Name]);
+                                command.Parameters.AddWithValue("@agent_email", arrColumns[(int)Aiken_Agent_Fields.Agent_Email]);
+                                command.Parameters.AddWithValue("@agent_web", arrColumns[(int)Aiken_Agent_Fields.Web_Address]);
+                                command.Parameters.AddWithValue("@agent_uid", arrColumns[(int)Aiken_Agent_Fields.AGENT_ID]);
 
-                            command.CommandText = strCommand;
-                            commandSupport.CommandText = strCommandSupport;
+                                commandSupport.Parameters.AddWithValue("@agent_uid", arrColumns[(int)Aiken_Agent_Fields.AGENT_ID]);
+                                commandSupport.Parameters.AddWithValue("@agent_home", arrColumns[(int)Aiken_Agent_Fields.Home]);
+                                commandSupport.Parameters.AddWithValue("@agent_street", arrColumns[(int)Aiken_Agent_Fields.Mail_Address_1]);
+                                commandSupport.Parameters.AddWithValue("@agent_city", arrColumns[(int)Aiken_Agent_Fields.Mail_City]);
+                                commandSupport.Parameters.AddWithValue("@agent_state", arrColumns[(int)Aiken_Agent_Fields.Mail_State]);
+                                commandSupport.Parameters.AddWithValue("@agent_zip", arrColumns[(int)Aiken_Agent_Fields.Mail_Zip_Code]);
 
-                            command.Parameters.AddWithValue("@office_id", arrColumns[(int)Office_Fields.Office_ID]);
-                            command.Parameters.AddWithValue("@office_name", arrColumns[(int)Office_Fields.Office_Name]);
-                            command.Parameters.AddWithValue("@zip", arrColumns[(int)Office_Fields.Mail_Zip_Code]);
-                            command.Parameters.AddWithValue("@office_web", arrColumns[(int)Office_Fields.Web_Address]);
+                                break;
+                            case FeedType.Office:
+                                strCommand = @" INSERT INTO aik_offices (officeid,office_name,zip,url) 
+			                                VALUES (@office_id,@office_name,@zip,@office_web)";
+                                strCommandSupport = @"  INSERT INTO aux_aik_offices (officeid,address,city,state,zip,phone,fax) 
+			                                        VALUES (@office_id,@office_street,@office_city,@office_state,@office_zip,@office_phone,@office_fax)";
 
-                            commandSupport.Parameters.AddWithValue("@office_id", arrColumns[(int)Office_Fields.Office_ID]);
-                            commandSupport.Parameters.AddWithValue("@office_street", arrColumns[(int)Office_Fields.Mail_Address_1]);
-                            commandSupport.Parameters.AddWithValue("@office_city", arrColumns[(int)Office_Fields.Mail_City]);
-                            commandSupport.Parameters.AddWithValue("@office_state", arrColumns[(int)Office_Fields.Mail_State]);
-                            commandSupport.Parameters.AddWithValue("@office_zip", arrColumns[(int)Office_Fields.Mail_Zip_Code]);
-                            commandSupport.Parameters.AddWithValue("@office_phone", arrColumns[(int)Office_Fields.Main]);
-                            commandSupport.Parameters.AddWithValue("@office_fax", arrColumns[(int)Office_Fields.Fax]);
+                                command.CommandText = strCommand;
+                                commandSupport.CommandText = strCommandSupport;
 
-                            break;
+                                command.Parameters.AddWithValue("@office_id", arrColumns[(int)Office_Fields.Office_ID]);
+                                command.Parameters.AddWithValue("@office_name", arrColumns[(int)Office_Fields.Office_Name]);
+                                command.Parameters.AddWithValue("@zip", arrColumns[(int)Office_Fields.Mail_Zip_Code]);
+                                command.Parameters.AddWithValue("@office_web", arrColumns[(int)Office_Fields.Web_Address]);
+
+                                commandSupport.Parameters.AddWithValue("@office_id", arrColumns[(int)Office_Fields.Office_ID]);
+                                commandSupport.Parameters.AddWithValue("@office_street", arrColumns[(int)Office_Fields.Mail_Address_1]);
+                                commandSupport.Parameters.AddWithValue("@office_city", arrColumns[(int)Office_Fields.Mail_City]);
+                                commandSupport.Parameters.AddWithValue("@office_state", arrColumns[(int)Office_Fields.Mail_State]);
+                                commandSupport.Parameters.AddWithValue("@office_zip", arrColumns[(int)Office_Fields.Mail_Zip_Code]);
+                                commandSupport.Parameters.AddWithValue("@office_phone", arrColumns[(int)Office_Fields.Main]);
+                                commandSupport.Parameters.AddWithValue("@office_fax", arrColumns[(int)Office_Fields.Fax]);
+
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        switch (intFeedType)
+                        {
+                            case FeedType.Residential:
+                                this.ImportPropertyPhotos(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Photo_location]);
+
+                                strCommand = @" INSERT INTO prop_res (  hvac,city,county,state,street_name,street_number,subdivision,zip,appliances,attic,basement,baths,b2_length,
+				 	                                                b2_level,b2_width,b3_length,b3_level,b3_width,b4_length,b4_level,b4_width,b5_length,b5_level,b5_width,bedrooms,breakfast_length,breakfast_level,
+				 	                                                breakfast_width,dining_length,dining_level,dining_width,driveway,ext_features,ext_finish,extra_rooms,family_length,family_level,family_width,
+				 	                                                financing,fireplace,foundation,flooring,garage,great_length,great_level,great_width,baths_half,heat,int_features,kitchen_length,kitchen_level,
+				 	                                                kitchen_width,price_list,list_agentid,list_agentname,list_office,list_firmid,living_length,living_level,living_width,master_length,master_level,
+				 	                                                master_width,propid,amenities,new_cons,photo_count,pool,porch,prop_age,public_remarks,roof,school_elem,school_mid,school_high,sewer,show_instr,
+				 	                                                sqft_total,status,style,water,year_built,cust_vt_url,prop_type,cust_directions,cust_builder_name,cust_dom,cust_list_date,lot_desc) 
+                                            VALUES (@hvac,@city,@county,@state,@street_name,@street_number,
+				 	                                @subdivision,@zip,@appliances,@attic,@basement,@baths,@b2_length,@b2_level,@b2_width,@b3_length,@b3_level,@b3_width,
+				 	                                @b4_length,@b4_level,@b4_width,@b5_length,@b5_level,@b5_width,@bedrooms,@breakfast_length,@breakfast_level,@breakfast_width,
+				 	                                @dining_length,@dining_level,@dining_width,@driveway,@ext_features,@ext_finish,@extra_rooms,@family_length,@family_level,
+				 	                                @family_width,@financing,@fireplace,@foundation,@flooring,@garage,@great_length,@great_level,@great_width,@baths_half,
+				 	                                @heat,@int_features,@kitchen_length,@kitchen_level,@kitchen_width,@price_list,@list_agentid,@list_agentname,@list_office,
+				 	                                @list_firmid,@living_length,@living_level,@living_width,@master_length,@master_level,@master_width,@propid,@amenities,
+				 	                                @new_cons,@photo_count,@pool,@porch,@prop_age,@public_remarks,@roof,@school_elem,@school_mid,@school_high,@sewer,
+				 	                                @show_instr,@sqft_total,@status,@style,@water,@year_built,@vt_url,@prop_type,@directions,@builder,@dom,@list_date,@lot_desc)";
+                                strCommandSupport = "INSERT INTO aux_aug (propid,fireplace,total_rooms,acres_total) VALUES (@propid,@fireplace_num,@total_rooms,@acres_total)";
+
+                                command.CommandText = strCommand;
+                                commandSupport.CommandText = strCommandSupport;
+
+                                if (arrColumns[(int)Augusta_RES_Fields.LA_ID].Split('-').Length >= 2)
+                                {
+                                    strAgentId = arrColumns[(int)Augusta_RES_Fields.LA_ID].Split('-')[1];
+                                }
+
+                                command.Parameters.AddWithValue("@hvac", arrColumns[(int)Augusta_RES_Fields.AC_Ventilation]);
+                                command.Parameters.AddWithValue("@attic", arrColumns[(int)Augusta_RES_Fields.Attic]);
+                                command.Parameters.AddWithValue("@city", arrColumns[(int)Augusta_RES_Fields.City]);
+                                command.Parameters.AddWithValue("@county", arrColumns[(int)Augusta_RES_Fields.County]);
+                                command.Parameters.AddWithValue("@state", arrColumns[(int)Augusta_RES_Fields.State]);
+                                command.Parameters.AddWithValue("@street_name", arrColumns[(int)Augusta_RES_Fields.Address]);
+                                command.Parameters.AddWithValue("@street_number", arrColumns[(int)Augusta_RES_Fields.Street_Number]);
+                                command.Parameters.AddWithValue("@subdivision", arrColumns[(int)Augusta_RES_Fields.Subdivision]);
+                                command.Parameters.AddWithValue("@zip", arrColumns[(int)Augusta_RES_Fields.Zip_Code]);
+                                command.Parameters.AddWithValue("@appliances", arrColumns[(int)Augusta_RES_Fields.Appliances]);
+                                command.Parameters.AddWithValue("@basement", arrColumns[(int)Augusta_RES_Fields.Basement]);
+                                command.Parameters.AddWithValue("@baths", arrColumns[(int)Augusta_RES_Fields.Full_Baths]);
+                                command.Parameters.AddWithValue("@b2_length", arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Length]);
+                                command.Parameters.AddWithValue("@b2_level", arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Level]);
+                                command.Parameters.AddWithValue("@b2_width", arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Width]);
+                                command.Parameters.AddWithValue("@b3_length", arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Length]);
+                                command.Parameters.AddWithValue("@b3_level", arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Level]);
+                                command.Parameters.AddWithValue("@b3_width", arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Width]);
+                                command.Parameters.AddWithValue("@b4_length", arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Length]);
+                                command.Parameters.AddWithValue("@b4_level", arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Level]);
+                                command.Parameters.AddWithValue("@b4_width", arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Width]);
+                                command.Parameters.AddWithValue("@b5_length", arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Length]);
+                                command.Parameters.AddWithValue("@b5_level", arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Level]);
+                                command.Parameters.AddWithValue("@b5_width", arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Width]);
+                                command.Parameters.AddWithValue("@bedrooms", arrColumns[(int)Augusta_RES_Fields.Bedrooms]);
+                                command.Parameters.AddWithValue("@breakfast_length", arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Length]);
+                                command.Parameters.AddWithValue("@breakfast_level", arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Level]);
+                                command.Parameters.AddWithValue("@breakfast_width", arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Width]);
+                                command.Parameters.AddWithValue("@dining_length", arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Length]);
+                                command.Parameters.AddWithValue("@dining_level", arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Level]);
+                                command.Parameters.AddWithValue("@dining_width", arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Width]);
+                                command.Parameters.AddWithValue("@driveway", arrColumns[(int)Augusta_RES_Fields.Driveway]);
+                                command.Parameters.AddWithValue("@ext_features", arrColumns[(int)Augusta_RES_Fields.Exterior_Features]);
+                                command.Parameters.AddWithValue("@ext_finish", arrColumns[(int)Augusta_RES_Fields.Exterior_Finish]);
+                                command.Parameters.AddWithValue("@extra_rooms", arrColumns[(int)Augusta_RES_Fields.Extra_Rooms]);
+                                command.Parameters.AddWithValue("@family_length", arrColumns[(int)Augusta_RES_Fields.Family_Rm_Length]);
+                                command.Parameters.AddWithValue("@family_level", arrColumns[(int)Augusta_RES_Fields.Family_Rm_Level]);
+                                command.Parameters.AddWithValue("@family_width", arrColumns[(int)Augusta_RES_Fields.Family_Rm_Width]);
+                                command.Parameters.AddWithValue("@financing", arrColumns[(int)Augusta_RES_Fields.Financing_Type]);
+                                command.Parameters.AddWithValue("@fireplace", arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces]);
+                                command.Parameters.AddWithValue("@foundation", arrColumns[(int)Augusta_RES_Fields.Foundation_Basement]);
+                                command.Parameters.AddWithValue("@flooring", arrColumns[(int)Augusta_RES_Fields.Flooring]);
+                                command.Parameters.AddWithValue("@garage", arrColumns[(int)Augusta_RES_Fields.Garage_Carport]);
+                                command.Parameters.AddWithValue("@great_length", arrColumns[(int)Augusta_RES_Fields.Great_Rm_Length]);
+                                command.Parameters.AddWithValue("@great_level", arrColumns[(int)Augusta_RES_Fields.Great_Rm_Level]);
+                                command.Parameters.AddWithValue("@great_width", arrColumns[(int)Augusta_RES_Fields.Great_Rm_Width]);
+                                command.Parameters.AddWithValue("@baths_half", arrColumns[(int)Augusta_RES_Fields.Half_Baths]);
+                                command.Parameters.AddWithValue("@heat", arrColumns[(int)Augusta_RES_Fields.Heat_Delivery]);
+                                command.Parameters.AddWithValue("@int_features", arrColumns[(int)Augusta_RES_Fields.Interior_Features]);
+                                command.Parameters.AddWithValue("@kitchen_length", arrColumns[(int)Augusta_RES_Fields.Kitchen_Length]);
+                                command.Parameters.AddWithValue("@kitchen_level", arrColumns[(int)Augusta_RES_Fields.Kitchen_Level]);
+                                command.Parameters.AddWithValue("@kitchen_width", arrColumns[(int)Augusta_RES_Fields.Kitchen_Width]);
+                                command.Parameters.AddWithValue("@price_list", arrColumns[(int)Augusta_RES_Fields.List_Price]);
+                                command.Parameters.AddWithValue("@list_agentid", strAgentId);
+                                command.Parameters.AddWithValue("@list_agentname", DBNull.Value);
+                                command.Parameters.AddWithValue("@list_office", arrColumns[(int)Augusta_RES_Fields.Listing_Office]);
+                                command.Parameters.AddWithValue("@list_firmid", DBNull.Value);
+                                command.Parameters.AddWithValue("@living_length", arrColumns[(int)Augusta_RES_Fields.Living_Rm_Length]);
+                                command.Parameters.AddWithValue("@living_level", arrColumns[(int)Augusta_RES_Fields.Living_Rm_Level]);
+                                command.Parameters.AddWithValue("@living_width", arrColumns[(int)Augusta_RES_Fields.Living_Rm_Width]);
+                                command.Parameters.AddWithValue("@master_length", arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Length]);
+                                command.Parameters.AddWithValue("@master_level", arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Level]);
+                                command.Parameters.AddWithValue("@master_width", arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Width]);
+                                command.Parameters.AddWithValue("@propid", arrColumns[(int)Augusta_RES_Fields.MLS_Number]);
+                                command.Parameters.AddWithValue("@amenities", arrColumns[(int)Augusta_RES_Fields.Neighborhood_Amenities]);
+                                command.Parameters.AddWithValue("@new_cons", arrColumns[(int)Augusta_RES_Fields.New_Construction]);
+                                command.Parameters.AddWithValue("@photo_count", arrColumns[(int)Augusta_RES_Fields.Photo_Count]);
+                                command.Parameters.AddWithValue("@pool", arrColumns[(int)Augusta_RES_Fields.Pool]);
+                                command.Parameters.AddWithValue("@porch", DBNull.Value);
+                                command.Parameters.AddWithValue("@prop_age", DBNull.Value);
+                                command.Parameters.AddWithValue("@public_remarks", arrColumns[(int)Augusta_RES_Fields.Property_Description]);
+                                command.Parameters.AddWithValue("@roof", arrColumns[(int)Augusta_RES_Fields.Roof]);
+                                command.Parameters.AddWithValue("@school_elem", arrColumns[(int)Augusta_RES_Fields.Elementary_School]);
+                                command.Parameters.AddWithValue("@school_mid", arrColumns[(int)Augusta_RES_Fields.Middle_School]);
+                                command.Parameters.AddWithValue("@school_high", arrColumns[(int)Augusta_RES_Fields.High_School]);
+                                command.Parameters.AddWithValue("@sewer", arrColumns[(int)Augusta_RES_Fields.Sewer]);
+                                command.Parameters.AddWithValue("@show_instr", arrColumns[(int)Augusta_RES_Fields.Showing_Instructions]);
+                                command.Parameters.AddWithValue("@sqft_total", arrColumns[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt]);
+                                command.Parameters.AddWithValue("@status", arrColumns[(int)Augusta_RES_Fields.Property_Status]);
+                                command.Parameters.AddWithValue("@style", arrColumns[(int)Augusta_RES_Fields.Style]);
+                                command.Parameters.AddWithValue("@water", arrColumns[(int)Augusta_RES_Fields.Water]);
+                                command.Parameters.AddWithValue("@year_built", arrColumns[(int)Augusta_RES_Fields.Apx_Year_Built]);
+                                command.Parameters.AddWithValue("@prop_type", "R");
+                                command.Parameters.AddWithValue("@directions", arrColumns[(int)Augusta_RES_Fields.Directions]);
+                                command.Parameters.AddWithValue("@builder", arrColumns[(int)Augusta_RES_Fields.Builder_Name]);
+                                command.Parameters.AddWithValue("@vt_url", arrColumns[(int)Augusta_RES_Fields.Virtual_Tour]);
+                                command.Parameters.AddWithValue("@dom", DBNull.Value);
+                                command.Parameters.AddWithValue("@list_date", DBNull.Value);
+                                command.Parameters.AddWithValue("@lot_desc", arrColumns[(int)Augusta_RES_Fields.Lot_Description]);
+
+                                commandSupport.Parameters.AddWithValue("@propid", arrColumns[(int)Augusta_RES_Fields.MLS_Number]);
+                                commandSupport.Parameters.AddWithValue("@fireplace_num", arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces]);
+                                commandSupport.Parameters.AddWithValue("@total_rooms", arrColumns[(int)Augusta_RES_Fields.Total_Number_Rooms]);
+                                commandSupport.Parameters.AddWithValue("@acres_total", arrColumns[(int)Augusta_RES_Fields.Total_Acres]);
+
+                                break;
+                            case FeedType.Agent:
+                                strCommand = @" INSERT INTO agents (agentid,email,name_first,name_last,phone_office,officeid,address,web) 
+			                                VALUES (@agent_id,@agent_email,@agent_first,@agent_last,@agent_phone,@agent_office,@agent_address,@agent_web)";
+                                strCommandSupport = @"  INSERT INTO aux_agents (agentid,phone_home,address,city,state,zip) 
+			                                        VALUES (@agent_id,@agent_home,@agent_street,@agent_city,@agent_state,@agent_zip)";
+
+                                command.CommandText = strCommand;
+                                commandSupport.CommandText = strCommandSupport;
+
+                                command.Parameters.AddWithValue("@agent_id", arrColumns[(int)Augusta_Agent_Fields.AGENT_ID]);
+                                command.Parameters.AddWithValue("@agent_email", arrColumns[(int)Augusta_Agent_Fields.Agent_Email]);
+                                command.Parameters.AddWithValue("@agent_first", arrColumns[(int)Augusta_Agent_Fields.First_Name]);
+                                command.Parameters.AddWithValue("@agent_last", arrColumns[(int)Augusta_Agent_Fields.Last_Name]);
+                                command.Parameters.AddWithValue("@agent_phone", arrColumns[(int)Augusta_Agent_Fields.Home]);
+                                command.Parameters.AddWithValue("@agent_office", arrColumns[(int)Augusta_Agent_Fields.Office_ID]);
+                                command.Parameters.AddWithValue("@agent_address", arrColumns[(int)Augusta_Agent_Fields.Mail_Address_1]);
+                                command.Parameters.AddWithValue("@agent_web", arrColumns[(int)Augusta_Agent_Fields.Web_Address]);
+
+                                commandSupport.Parameters.AddWithValue("@agent_id", arrColumns[(int)Augusta_Agent_Fields.AGENT_ID]);
+                                commandSupport.Parameters.AddWithValue("@agent_home", arrColumns[(int)Augusta_Agent_Fields.Home]);
+                                commandSupport.Parameters.AddWithValue("@agent_street", arrColumns[(int)Augusta_Agent_Fields.Mail_Address_1]);
+                                commandSupport.Parameters.AddWithValue("@agent_city", arrColumns[(int)Augusta_Agent_Fields.Mail_City]);
+                                commandSupport.Parameters.AddWithValue("@agent_state", arrColumns[(int)Augusta_Agent_Fields.Mail_State]);
+                                commandSupport.Parameters.AddWithValue("@agent_zip", arrColumns[(int)Augusta_Agent_Fields.Mail_Zip_Code]);
+
+                                break;
+                            case FeedType.Office:
+                                strCommand = @" INSERT INTO offices (office_id,office_name,office_phone,address,url) 
+			                                VALUES (@office_id,@office_name,@office_phone,@office_address,@office_web)";
+                                strCommandSupport = @"  INSERT INTO aux_offices (officeid,address,city,state,zip,fax) 
+			                                        VALUES (@office_id,@office_street,@office_city,@office_state,@office_zip,@office_fax)";
+
+                                command.CommandText = strCommand;
+                                commandSupport.CommandText = strCommandSupport;
+
+                                command.Parameters.AddWithValue("@office_id", arrColumns[(int)Office_Fields.Office_ID]);
+                                command.Parameters.AddWithValue("@office_name", arrColumns[(int)Office_Fields.Office_Name]);
+                                command.Parameters.AddWithValue("@office_phone", arrColumns[(int)Office_Fields.Main]);
+                                command.Parameters.AddWithValue("@office_address", arrColumns[(int)Office_Fields.Mail_Address_1]);
+                                command.Parameters.AddWithValue("@office_web", arrColumns[(int)Office_Fields.Web_Address]);
+
+                                commandSupport.Parameters.AddWithValue("@office_id", arrColumns[(int)Office_Fields.Office_ID]);
+                                commandSupport.Parameters.AddWithValue("@office_street", arrColumns[(int)Office_Fields.Mail_Address_1]);
+                                commandSupport.Parameters.AddWithValue("@office_city", arrColumns[(int)Office_Fields.Mail_City]);
+                                commandSupport.Parameters.AddWithValue("@office_state", arrColumns[(int)Office_Fields.Mail_State]);
+                                commandSupport.Parameters.AddWithValue("@office_zip", arrColumns[(int)Office_Fields.Mail_Zip_Code]);
+                                commandSupport.Parameters.AddWithValue("@office_fax", arrColumns[(int)Office_Fields.Fax]);
+
+                                break;
+                        }
+                    }
+
+                    try
+                    {
+                        connection.Open();
+                        command.ExecuteNonQuery();
+                        commandSupport.ExecuteNonQuery();
+                        connection.Close();
+                    }
+                    catch (MySqlException ex)
+                    {
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running MySQL Export SQL - Details: " + ex.Message + "</i></b>");
                     }
                 }
-                else
-                {
-                    switch (intFeedType)
-                    {
-                        case FeedType.Residential:
-                            this.ImportPropertyPhotos(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Photo_location]);
-
-                            strCommand = @" INSERT INTO prop_res (  hvac,city,county,state,street_name,street_number,subdivision,zip,appliances,attic,basement,baths,b2_length,
-				 	                                            b2_level,b2_width,b3_length,b3_level,b3_width,b4_length,b4_level,b4_width,b5_length,b5_level,b5_width,bedrooms,breakfast_length,breakfast_level,
-				 	                                            breakfast_width,dining_length,dining_level,dining_width,driveway,ext_features,ext_finish,extra_rooms,family_length,family_level,family_width,
-				 	                                            financing,fireplace,foundation,flooring,garage,great_length,great_level,great_width,baths_half,heat,int_features,kitchen_length,kitchen_level,
-				 	                                            kitchen_width,price_list,list_agentid,list_agentname,list_office,list_firmid,living_length,living_level,living_width,master_length,master_level,
-				 	                                            master_width,propid,amenities,new_cons,photo_count,pool,porch,prop_age,public_remarks,roof,school_elem,school_mid,school_high,sewer,show_instr,
-				 	                                            sqft_total,status,style,water,year_built,cust_vt_url,prop_type,cust_directions,cust_builder_name,cust_dom,cust_list_date,lot_desc) 
-                                        VALUES (@hvac,@city,@county,@state,@street_name,@street_number,
-				 	                            @subdivision,@zip,@appliances,@attic,@basement,@baths,@b2_length,@b2_level,@b2_width,@b3_length,@b3_level,@b3_width,
-				 	                            @b4_length,@b4_level,@b4_width,@b5_length,@b5_level,@b5_width,@bedrooms,@breakfast_length,@breakfast_level,@breakfast_width,
-				 	                            @dining_length,@dining_level,@dining_width,@driveway,@ext_features,@ext_finish,@extra_rooms,@family_length,@family_level,
-				 	                            @family_width,@financing,@fireplace,@foundation,@flooring,@garage,@great_length,@great_level,@great_width,@baths_half,
-				 	                            @heat,@int_features,@kitchen_length,@kitchen_level,@kitchen_width,@price_list,@list_agentid,@list_agentname,@list_office,
-				 	                            @list_firmid,@living_length,@living_level,@living_width,@master_length,@master_level,@master_width,@propid,@amenities,
-				 	                            @new_cons,@photo_count,@pool,@porch,@prop_age,@public_remarks,@roof,@school_elem,@school_mid,@school_high,@sewer,
-				 	                            @show_instr,@sqft_total,@status,@style,@water,@year_built,@vt_url,@prop_type,@directions,@builder,@dom,@list_date,@lot_desc)";
-                            strCommandSupport = "INSERT INTO aux_aug (propid,fireplace,total_rooms,acres_total) VALUES (@propid,@fireplace_num,@total_rooms,@acres_total)";
-
-                            command.CommandText = strCommand;
-                            commandSupport.CommandText = strCommandSupport;
-
-                            command.Parameters.AddWithValue("@hvac", arrColumns[(int)Augusta_RES_Fields.AC_Ventilation]);
-                            command.Parameters.AddWithValue("@city", arrColumns[(int)Augusta_RES_Fields.City]);
-                            command.Parameters.AddWithValue("@county", arrColumns[(int)Augusta_RES_Fields.County]);
-                            command.Parameters.AddWithValue("@state", arrColumns[(int)Augusta_RES_Fields.State]);
-                            command.Parameters.AddWithValue("@street_name", arrColumns[(int)Augusta_RES_Fields.Address]);
-                            command.Parameters.AddWithValue("@street_number", arrColumns[(int)Augusta_RES_Fields.Street_Number]);
-                            command.Parameters.AddWithValue("@subdivision", arrColumns[(int)Augusta_RES_Fields.Subdivision]);
-                            command.Parameters.AddWithValue("@zip", arrColumns[(int)Augusta_RES_Fields.Zip_Code]);
-                            command.Parameters.AddWithValue("@appliances", arrColumns[(int)Augusta_RES_Fields.Appliances]);
-                            command.Parameters.AddWithValue("@basement", arrColumns[(int)Augusta_RES_Fields.Basement]);
-                            command.Parameters.AddWithValue("@baths", arrColumns[(int)Augusta_RES_Fields.Full_Baths]);
-                            command.Parameters.AddWithValue("@b2_length", arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Length]);
-                            command.Parameters.AddWithValue("@b2_level", arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Level]);
-                            command.Parameters.AddWithValue("@b2_width", arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Width]);
-                            command.Parameters.AddWithValue("@b3_length", arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Length]);
-                            command.Parameters.AddWithValue("@b3_level", arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Level]);
-                            command.Parameters.AddWithValue("@b3_width", arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Width]);
-                            command.Parameters.AddWithValue("@b4_length", arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Length]);
-                            command.Parameters.AddWithValue("@b4_level", arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Level]);
-                            command.Parameters.AddWithValue("@b4_width", arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Width]);
-                            command.Parameters.AddWithValue("@b5_length", arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Length]);
-                            command.Parameters.AddWithValue("@b5_level", arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Level]);
-                            command.Parameters.AddWithValue("@b5_width", arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Width]);
-                            command.Parameters.AddWithValue("@bedrooms", arrColumns[(int)Augusta_RES_Fields.Bedrooms]);
-                            command.Parameters.AddWithValue("@breakfast_length", arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Length]);
-                            command.Parameters.AddWithValue("@breakfast_level", arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Level]);
-                            command.Parameters.AddWithValue("@breakfast_width", arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Width]);
-                            command.Parameters.AddWithValue("@dining_length", arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Length]);
-                            command.Parameters.AddWithValue("@dining_level", arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Level]);
-                            command.Parameters.AddWithValue("@dining_width", arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Width]);
-                            command.Parameters.AddWithValue("@driveway", arrColumns[(int)Augusta_RES_Fields.Driveway]);
-                            command.Parameters.AddWithValue("@ext_features", arrColumns[(int)Augusta_RES_Fields.Exterior_Features]);
-                            command.Parameters.AddWithValue("@ext_finish", arrColumns[(int)Augusta_RES_Fields.Exterior_Finish]);
-                            command.Parameters.AddWithValue("@extra_rooms", arrColumns[(int)Augusta_RES_Fields.Extra_Rooms]);
-                            command.Parameters.AddWithValue("@family_length", arrColumns[(int)Augusta_RES_Fields.Family_Rm_Length]);
-                            command.Parameters.AddWithValue("@family_level", arrColumns[(int)Augusta_RES_Fields.Family_Rm_Level]);
-                            command.Parameters.AddWithValue("@family_width", arrColumns[(int)Augusta_RES_Fields.Family_Rm_Width]);
-                            command.Parameters.AddWithValue("@financing", arrColumns[(int)Augusta_RES_Fields.Financing_Type]);
-                            command.Parameters.AddWithValue("@fireplace", arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces]);
-                            command.Parameters.AddWithValue("@foundation", arrColumns[(int)Augusta_RES_Fields.Foundation_Basement]);
-                            command.Parameters.AddWithValue("@flooring", arrColumns[(int)Augusta_RES_Fields.Flooring]);
-                            command.Parameters.AddWithValue("@garage", arrColumns[(int)Augusta_RES_Fields.Garage_Carport]);
-                            command.Parameters.AddWithValue("@great_length", arrColumns[(int)Augusta_RES_Fields.Great_Rm_Length]);
-                            command.Parameters.AddWithValue("@great_level", arrColumns[(int)Augusta_RES_Fields.Great_Rm_Level]);
-                            command.Parameters.AddWithValue("@great_width", arrColumns[(int)Augusta_RES_Fields.Great_Rm_Width]);
-                            command.Parameters.AddWithValue("@baths_half", arrColumns[(int)Augusta_RES_Fields.Half_Baths]);
-                            command.Parameters.AddWithValue("@heat", arrColumns[(int)Augusta_RES_Fields.Heat_Delivery]);
-                            command.Parameters.AddWithValue("@int_features", arrColumns[(int)Augusta_RES_Fields.Interior_Features]);
-                            command.Parameters.AddWithValue("@kitchen_length", arrColumns[(int)Augusta_RES_Fields.Kitchen_Length]);
-                            command.Parameters.AddWithValue("@kitchen_level", arrColumns[(int)Augusta_RES_Fields.Kitchen_Level]);
-                            command.Parameters.AddWithValue("@kitchen_width", arrColumns[(int)Augusta_RES_Fields.Kitchen_Width]);
-                            command.Parameters.AddWithValue("@price_list", arrColumns[(int)Augusta_RES_Fields.List_Price]);
-                            command.Parameters.AddWithValue("@list_agentid", arrColumns[(int)Augusta_RES_Fields.LA_ID]);
-                            command.Parameters.AddWithValue("@list_agentname", DBNull.Value);
-                            command.Parameters.AddWithValue("@list_office", arrColumns[(int)Augusta_RES_Fields.Listing_Office]);
-                            command.Parameters.AddWithValue("@list_firmid", DBNull.Value);
-                            command.Parameters.AddWithValue("@living_length", arrColumns[(int)Augusta_RES_Fields.Living_Rm_Length]);
-                            command.Parameters.AddWithValue("@living_level", arrColumns[(int)Augusta_RES_Fields.Living_Rm_Level]);
-                            command.Parameters.AddWithValue("@living_width", arrColumns[(int)Augusta_RES_Fields.Living_Rm_Width]);
-                            command.Parameters.AddWithValue("@master_length", arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Length]);
-                            command.Parameters.AddWithValue("@master_level", arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Level]);
-                            command.Parameters.AddWithValue("@master_width", arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Width]);
-                            command.Parameters.AddWithValue("@propid", arrColumns[(int)Augusta_RES_Fields.MLS_Number]);
-                            command.Parameters.AddWithValue("@amenities", arrColumns[(int)Augusta_RES_Fields.Neighborhood_Amenities]);
-                            command.Parameters.AddWithValue("@new_cons", arrColumns[(int)Augusta_RES_Fields.New_Construction]);
-                            command.Parameters.AddWithValue("@photo_count", arrColumns[(int)Augusta_RES_Fields.Photo_Count]);
-                            command.Parameters.AddWithValue("@pool", arrColumns[(int)Augusta_RES_Fields.Pool]);
-                            command.Parameters.AddWithValue("@porch", DBNull.Value);
-                            command.Parameters.AddWithValue("@prop_age", DBNull.Value);
-                            command.Parameters.AddWithValue("@public_remarks", arrColumns[(int)Augusta_RES_Fields.Property_Description]);
-                            command.Parameters.AddWithValue("@roof", arrColumns[(int)Augusta_RES_Fields.Roof]);
-                            command.Parameters.AddWithValue("@school_elem", arrColumns[(int)Augusta_RES_Fields.Elementary_School]);
-                            command.Parameters.AddWithValue("@school_mid", arrColumns[(int)Augusta_RES_Fields.Middle_School]);
-                            command.Parameters.AddWithValue("@school_high", arrColumns[(int)Augusta_RES_Fields.High_School]);
-                            command.Parameters.AddWithValue("@sewer", arrColumns[(int)Augusta_RES_Fields.Sewer]);
-                            command.Parameters.AddWithValue("@show_instr", arrColumns[(int)Augusta_RES_Fields.Showing_Instructions]);
-                            command.Parameters.AddWithValue("@sqft_total", arrColumns[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt]);
-                            command.Parameters.AddWithValue("@status", arrColumns[(int)Augusta_RES_Fields.Property_Status]);
-                            command.Parameters.AddWithValue("@style", arrColumns[(int)Augusta_RES_Fields.Style]);
-                            command.Parameters.AddWithValue("@water", arrColumns[(int)Augusta_RES_Fields.Water]);
-                            command.Parameters.AddWithValue("@year_built", arrColumns[(int)Augusta_RES_Fields.Apx_Year_Built]);
-                            command.Parameters.AddWithValue("@prop_type", arrColumns[(int)Augusta_RES_Fields.Property_Type]);
-                            command.Parameters.AddWithValue("@directions", arrColumns[(int)Augusta_RES_Fields.Directions]);
-                            command.Parameters.AddWithValue("@builder", arrColumns[(int)Augusta_RES_Fields.Builder_Name]);
-                            command.Parameters.AddWithValue("@dom", DBNull.Value);
-                            command.Parameters.AddWithValue("@list_date", DBNull.Value);
-                            command.Parameters.AddWithValue("@lot_desc", arrColumns[(int)Augusta_RES_Fields.Lot_Description]);
-
-                            commandSupport.Parameters.AddWithValue("@propid", arrColumns[(int)Augusta_RES_Fields.MLS_Number]);
-                            commandSupport.Parameters.AddWithValue("@fireplace_num", arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces]);
-                            commandSupport.Parameters.AddWithValue("@total_rooms", arrColumns[(int)Augusta_RES_Fields.Total_Number_Rooms]);
-                            commandSupport.Parameters.AddWithValue("@acres_total", arrColumns[(int)Augusta_RES_Fields.Total_Acres]);
-
-                            break;
-                        case FeedType.Agent:
-                            strCommand = @" INSERT INTO agents (agentid,email,name_first,name_last,phone_office,officeid,address,web) 
-			                            VALUES (@agent_id,@agent_email,@agent_first,@agent_last,@agent_phone,@agent_office,@agent_address,@agent_web)";
-                            strCommandSupport = @"  INSERT INTO aux_agents (agentid,phone_home,address,city,state,zip) 
-			                                    VALUES (@agent_id,@agent_home,@agent_street,@agent_city,@agent_state,@agent_zip)";
-
-                            command.CommandText = strCommand;
-                            commandSupport.CommandText = strCommandSupport;
-
-                            command.Parameters.AddWithValue("@agent_id", arrColumns[(int)Augusta_Agent_Fields.AGENT_ID]);
-                            command.Parameters.AddWithValue("@agent_email", arrColumns[(int)Augusta_Agent_Fields.Agent_Email]);
-                            command.Parameters.AddWithValue("@agent_first", arrColumns[(int)Augusta_Agent_Fields.First_Name]);
-                            command.Parameters.AddWithValue("@agent_last", arrColumns[(int)Augusta_Agent_Fields.Last_Name]);
-                            command.Parameters.AddWithValue("@agent_phone", arrColumns[(int)Augusta_Agent_Fields.Home]);
-                            command.Parameters.AddWithValue("@agent_office", arrColumns[(int)Augusta_Agent_Fields.Office_ID]);
-                            command.Parameters.AddWithValue("@agent_address", arrColumns[(int)Augusta_Agent_Fields.Mail_Address_1]);
-                            command.Parameters.AddWithValue("@agent_web", arrColumns[(int)Augusta_Agent_Fields.Web_Address]);
-
-                            commandSupport.Parameters.AddWithValue("@agent_id", arrColumns[(int)Augusta_Agent_Fields.AGENT_ID]);
-                            commandSupport.Parameters.AddWithValue("@agent_home", arrColumns[(int)Augusta_Agent_Fields.Home]);
-                            commandSupport.Parameters.AddWithValue("@agent_street", arrColumns[(int)Augusta_Agent_Fields.Mail_Address_1]);
-                            commandSupport.Parameters.AddWithValue("@agent_city", arrColumns[(int)Augusta_Agent_Fields.Mail_City]);
-                            commandSupport.Parameters.AddWithValue("@agent_state", arrColumns[(int)Augusta_Agent_Fields.Mail_State]);
-                            commandSupport.Parameters.AddWithValue("@agent_zip", arrColumns[(int)Augusta_Agent_Fields.Mail_Zip_Code]);
-
-                            break;
-                        case FeedType.Office:
-                            strCommand = @" INSERT INTO offices (office_id,office_name,office_phone,address,url) 
-			                            VALUES (@office_id,@office_name,@office_phone,@office_address,@office_web)";
-                            strCommandSupport = @"  INSERT INTO aux_offices (officeid,address,city,state,zip,fax) 
-			                                    VALUES (@office_id,@office_street,@office_city,@office_state,@office_zip,@office_fax)";
-
-                            command.CommandText = strCommand;
-                            commandSupport.CommandText = strCommandSupport;
-
-                            command.Parameters.AddWithValue("@office_id", arrColumns[(int)Office_Fields.Office_ID]);
-                            command.Parameters.AddWithValue("@office_name", arrColumns[(int)Office_Fields.Office_Name]);
-                            command.Parameters.AddWithValue("@office_phone", arrColumns[(int)Office_Fields.Main]);
-                            command.Parameters.AddWithValue("@office_address", arrColumns[(int)Office_Fields.Mail_Address_1]);
-                            command.Parameters.AddWithValue("@office_web", arrColumns[(int)Office_Fields.Web_Address]);
-
-                            commandSupport.Parameters.AddWithValue("@office_id", arrColumns[(int)Office_Fields.Office_ID]);
-                            commandSupport.Parameters.AddWithValue("@office_street", arrColumns[(int)Office_Fields.Mail_Address_1]);
-                            commandSupport.Parameters.AddWithValue("@office_city", arrColumns[(int)Office_Fields.Mail_City]);
-                            commandSupport.Parameters.AddWithValue("@office_state", arrColumns[(int)Office_Fields.Mail_State]);
-                            commandSupport.Parameters.AddWithValue("@office_zip", arrColumns[(int)Office_Fields.Mail_Zip_Code]);
-                            commandSupport.Parameters.AddWithValue("@office_fax", arrColumns[(int)Office_Fields.Fax]);
-
-                            break;
-                    }
-                }
-
-                connection.Open();
-                command.ExecuteNonQuery();
-                commandSupport.ExecuteNonQuery();
-                connection.Close();
-
+            }
+            catch (Exception ex)
+            {
+                this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running ExportMySQLData: " + ex.Message + "</i></b>");
+                this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running ExportMySQLData - Details: " + ex.StackTrace + "</i></b>");
             }
         }
 
@@ -674,6 +725,47 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// <summary>
         /// 
         /// </summary>
+        /// <param name="strMLSID"></param>
+        /// <param name="strPhotoLocations"></param>
+        /// <param name="intMLSType"></param>
+        public void ImportPropertyPhotos(string strMLSID, string strPhotoLocations)
+        {
+            string[] arrPhotoLocations = strPhotoLocations.Split(',');
+            string strCommand = string.Format(@" INSERT INTO photo_links_aik (link,propid,label,sequence,timestamp,portrait) 
+                                                 VALUES (@photo_url,@propid,'',@photo_seq,@time,'False')");
+
+            using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ConnectionString))
+            {
+                for (int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
+                {
+                    if (!string.IsNullOrEmpty(arrPhotoLocations[intIndex]))
+                    {
+                        using (MySqlCommand command = new MySqlCommand(strCommand, connection))
+                        {
+                            command.CommandTimeout = 300;
+
+                            command.Parameters.AddWithValue("@photo_url", arrPhotoLocations[intIndex]);
+                            command.Parameters.AddWithValue("@photo_seq", (intIndex + 1));
+                            command.Parameters.AddWithValue("@propid", strMLSID);
+                            command.Parameters.AddWithValue("@time", DateTime.Now.ToString("G"));
+
+                            connection.Open();
+                            command.ExecuteNonQuery();
+                            connection.Close();
+                        }
+                    }
+                }
+            }
+
+            //for(int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
+            //{
+
+            //}
+        }
+        
+        /// <summary>
+        /// 
+        /// </summary>
         /// <param name="strAddress"></param>
         /// <param name="strCity"></param>
         /// <param name="strState"></param>
@@ -755,21 +847,29 @@ namespace Meybohm_REAMLS_Consolidation.Model
             int intCount = 0;
             string strTempFile = strFile.Replace(Constant.AIKEN_DOWNLOAD_FOLDER, Constant.AIKEN_ARCHIVE_FOLDER).Replace(Constant.AUGUSTA_DOWNLOAD_FOLDER, Constant.AUGUSTA_ARCHIVE_FOLDER);
 
-            while (File.Exists(strTempFile))
+            if(this.blnIsIncremental)
             {
-                if (DateTime.Now > File.GetCreationTime(strTempFile).AddDays(3))
+                File.Delete(strFile);
+                this.WriteToLog("<br />Deleting: <b>" + strFile + "</b>");
+            }
+            else
+            {
+                while (File.Exists(strTempFile))
                 {
-                    File.Delete(strTempFile);
+                    if (DateTime.Now > File.GetCreationTime(strTempFile).AddDays(3))
+                    {
+                        File.Delete(strTempFile);
+                    }
+
+                    intCount++;
+
+                    strTempFile = strFile + "_" + intCount;
+                    strTempFile = strTempFile.Replace(Constant.AIKEN_DOWNLOAD_FOLDER, Constant.AIKEN_ARCHIVE_FOLDER).Replace(Constant.AUGUSTA_DOWNLOAD_FOLDER, Constant.AUGUSTA_ARCHIVE_FOLDER);
                 }
 
-                intCount++;
-
-                strTempFile = strFile + "_" + intCount;
-                strTempFile = strTempFile.Replace(Constant.AIKEN_DOWNLOAD_FOLDER, Constant.AIKEN_ARCHIVE_FOLDER).Replace(Constant.AUGUSTA_DOWNLOAD_FOLDER, Constant.AUGUSTA_ARCHIVE_FOLDER);
+                this.WriteToLog("<br />Moving: <b>" + strFile + "</b> to <b>" + strTempFile + "</b>");
+                File.Move(strFile, strTempFile);
             }
-
-            this.WriteToLog("<br />Moving: <b>" + strFile + "</b> to <b>" + strTempFile + "</b>");
-            File.Move(strFile, strTempFile);
         }
 
         /// <summary>
@@ -1049,8 +1149,11 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Aiken_RES_Fields.Latitude] = strGeoLocation[0];
                                         arrColumns[(int)Aiken_RES_Fields.Longitude] = strGeoLocation[1];
                                     }
-                                    
-                                    //this.ExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Residential);
+
+                                    if (intFeedType == FeedType.Residential)
+                                    {
+                                        this.RunExportMySQLData(arrColumns, MLSType.Aiken, intFeedType);
+                                    }
                                 }
                                 else if (intFeedType == FeedType.Agent)
                                 {
@@ -1075,7 +1178,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
                                     this.intTotalAikenAgents++;
 
-                                    //this.ExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Agent);
+                                    this.RunExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Agent);
                                 }
                                 else if (intFeedType == FeedType.Office)
                                 {
@@ -1085,7 +1188,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
                                     this.intTotalAikenOffices++;
 
-                                    //this.ExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Office);
+                                    this.RunExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Office);
                                 }
 
                                 // TODO: Save information in Linux Server
@@ -1468,7 +1571,10 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Augusta_RES_Fields.Longitude] = strGeoLocation[1];
                                     }
 
-                                    //this.ExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Residential);
+                                    if (intFeedType == FeedType.Residential)
+                                    {
+                                        this.RunExportMySQLData(arrColumns, MLSType.Augusta, intFeedType);
+                                    }
                                 }
                                 else if (intFeedType == FeedType.Agent)
                                 {
@@ -1493,7 +1599,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
                                     this.intTotalAugustaAgents++;
 
-                                    //this.ExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Agent);
+                                    this.RunExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Agent);
                                 }
                                 else if (intFeedType == FeedType.Office)
                                 {
@@ -1503,7 +1609,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
                                     this.intTotalAugustaOffices++;
 
-                                    //this.ExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Office);
+                                    this.RunExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Office);
                                 }
 
                                 // TODO: Save information in Linux Server
@@ -1532,47 +1638,6 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// <summary>
         /// 
         /// </summary>
-        /// <param name="strMLSID"></param>
-        /// <param name="strPhotoLocations"></param>
-        /// <param name="intMLSType"></param>
-        public void ImportPropertyPhotos(string strMLSID, string strPhotoLocations)
-        {
-            string[] arrPhotoLocations = strPhotoLocations.Split(',');
-            string strCommand = string.Format(@" INSERT INTO photo_links_aik (link,propid,label,sequence,timestamp,portrait) 
-                                                 VALUES ('@photo_url','@propid','','@photo_seq','@time','False')");
-
-            using (SqlConnection connection = new SqlConnection(ConfigurationManager.ConnectionStrings["MeybohmServer"].ConnectionString))
-            {
-                for (int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
-                {
-                    if (!string.IsNullOrEmpty(arrPhotoLocations[intIndex]))
-                    {
-                        using (SqlCommand command = new SqlCommand(strCommand, connection))
-                        {
-                            command.CommandTimeout = 300;
-
-                            command.Parameters.AddWithValue("@photo_url", arrPhotoLocations[intIndex]);
-                            command.Parameters.AddWithValue("@photo_seq", (intIndex + 1));
-                            command.Parameters.AddWithValue("@propid", strMLSID);
-                            command.Parameters.AddWithValue("@time", DateTime.Now.ToString("G"));
-
-                            connection.Open();
-                            command.ExecuteNonQuery();
-                            connection.Close();
-                        }
-                    }
-                }
-            }
-
-            for(int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
-            {
-
-            }
-        }
-        
-        /// <summary>
-        /// 
-        /// </summary>
         private void RemoveOldFiles()
         {
             string[] arrFilePaths = Directory.GetFiles(Constant.CONSOLIDATION_FOLDER, "*.csv");
@@ -1588,6 +1653,93 @@ namespace Meybohm_REAMLS_Consolidation.Model
                     File.Delete(arrFilePaths[intIndex]);
                 }
                 
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="arrColumns"></param>
+        /// <param name="intMLSType"></param>
+        /// <param name="intFeedType"></param>
+        private void RunExportMySQLData(string[] arrColumns, MLSType intMLSType, FeedType intFeedType)
+        {
+            bool isAssigned = false;
+
+            string[] newArrayColumns = new string[arrColumns.Length];
+
+            for (int intIndex = 0; intIndex < newArrayColumns.Length; intIndex++)
+            {
+                newArrayColumns[intIndex] = arrColumns[intIndex];
+            }
+
+            for (int intTaskIndex = 0; intTaskIndex < this.taskPool.Length; intTaskIndex++)
+            {
+                if (taskPool[intTaskIndex] == null || (taskPool[intTaskIndex] != null && taskPool[intTaskIndex].Status == TaskStatus.RanToCompletion))
+                {
+                    taskPool[intTaskIndex] = Task.Factory.StartNew(() => this.ExportMySQLData(newArrayColumns, intMLSType, intFeedType));
+                    isAssigned = true;
+
+                    break;
+                }
+            }
+
+            if (!isAssigned)
+            {
+                int intTaskIndex = Task.WaitAny(taskPool);
+
+                taskPool[intTaskIndex] = Task.Factory.StartNew(() => this.ExportMySQLData(newArrayColumns, intMLSType, intFeedType));
+                isAssigned = true;
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public void FinishAllTasks()
+        {
+            if(this.taskPool.Any(task => task != null))
+            {
+                for (int intTaskIndex = 0; intTaskIndex < this.taskPool.Length; intTaskIndex++)
+                {
+                    if (taskPool[intTaskIndex] != null && taskPool[intTaskIndex].Status != TaskStatus.RanToCompletion)
+                    {
+                        taskPool[intTaskIndex].Wait();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public void MigrateAugustaMySQLData()
+        {
+            string strCommand = @" TRUNCATE TABLE prop_res_soap;
+                                   TRUNCATE TABLE photo_links_aug_soap; 
+                                   TRUNCATE TABLE agents_soap;
+                                   TRUNCATE TABLE offices_soap;     
+
+                                   INSERT INTO prop_res_soap SELECT * FROM prop_res;   
+                                   INSERT INTO photo_links_aug_soap SELECT * FROM photo_links_aug;   
+                                   INSERT INTO agents_soap SELECT * FROM agents;   
+                                   INSERT INTO offices_soap SELECT * FROM offices; ";
+
+            using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
+            {
+                using (MySqlCommand command = new MySqlCommand(strCommand, connection))
+                {
+                    try
+                    {
+                        connection.Open();
+                        command.ExecuteNonQuery();
+                        connection.Close();
+                    }
+                    catch(Exception ex)
+                    {
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running MigrateAugustaMySQLData SQL - Details: " + ex.Message + "</i></b>");
+                    }
+                }
             }
         }
 
