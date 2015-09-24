@@ -275,6 +275,35 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// <summary>
         /// 
         /// </summary>
+        public void ExecuteBuildFromFactsProcess()
+        {
+            string strMeybohmImportURL = Constant.BUILD_FROM_FACTS_URL;
+            string strServiceResponse = "";
+
+            this.WriteToLog("Running URL: " + strMeybohmImportURL);
+
+            try
+            {
+                WebRequest webRequest = WebRequest.Create(new Uri(Constant.BUILD_FROM_FACTS_URL));
+                webRequest.Timeout = 4 * 60 * 60 * 1000; // 4 hours
+                WebResponse webResponse = webRequest.GetResponse();
+                Stream streamData = webResponse.GetResponseStream();
+                using (StreamReader srReader = new StreamReader(streamData))
+                {
+                    strServiceResponse = srReader.ReadToEnd();
+                }
+                this.WriteToLog("<br />Web Service Response: " + strServiceResponse);
+            }
+            catch (Exception ex)
+            {
+                this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running BuildFromFacts Web Service: " + ex.Message + "</i></b>");
+                this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running BuildFromFacts Web Service Details: " + ex.StackTrace + "</i></b>");
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
         /// <param name="arrColumns"></param>
         /// <param name="intMLSType"></param>
         /// <param name="intFeedType"></param>
