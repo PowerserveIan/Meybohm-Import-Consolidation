@@ -878,8 +878,11 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
             if(this.blnIsIncremental)
             {
-                File.Delete(strFile);
-                this.WriteToLog("<br />Deleting: <b>" + strFile + "</b>");
+                if(strFile.Contains("Inc"))
+                {
+                    File.Delete(strFile);
+                    this.WriteToLog("<br />Deleting: <b>" + strFile + "</b>");
+                }
             }
             else
             {
@@ -1778,10 +1781,17 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// <param name="strMessage"></param>
         public void WriteToLog(string strMessage)
         {
-            using (StreamWriter file = new StreamWriter(Constant.LOG_FILE, true))
+            try
             {
-                file.WriteLine(strMessage);
-                sbLogBuilder.Append(strMessage);
+                using (StreamWriter file = new StreamWriter(Constant.LOG_FILE, true))
+                {
+                    file.WriteLine(strMessage);
+                    sbLogBuilder.Append(strMessage);
+                }
+            }
+            catch(Exception ex)
+            {
+                //Skip Exceptions on log writing
             }
         }
 
