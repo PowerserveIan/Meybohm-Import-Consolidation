@@ -327,7 +327,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                         {
                             case FeedType.Residential:
                                 // Export Property Photos
-                                this.ImportPropertyPhotos(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Photo_Location]);
+                                this.ImportPropertyPhotos(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Photo_Location], intMLSType);
 
                                 strCommand = @" INSERT INTO prop_aik (  propid,street_number,street_address,subdivision,city,state,zip,price_list,list_office,list_agentid,prop_type,
 				 	                                                        public_remarks,year_built,style,ext_features,int_features,lot_size,lot_desc,sqft_total,baths,baths_half,bedrooms,foundation,flooring,garage,attic,
@@ -448,7 +448,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                         switch (intFeedType)
                         {
                             case FeedType.Residential:
-                                this.ImportPropertyPhotos(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Photo_location]);
+                                this.ImportPropertyPhotos(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Photo_location], intMLSType);
 
                                 strCommand = @" INSERT INTO prop_res (  hvac,city,county,state,street_name,street_number,subdivision,zip,appliances,attic,basement,baths,b2_length,
 				 	                                                b2_level,b2_width,b3_length,b3_level,b3_width,b4_length,b4_level,b4_width,b5_length,b5_level,b5_width,bedrooms,breakfast_length,breakfast_level,
@@ -757,11 +757,17 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// <param name="strMLSID"></param>
         /// <param name="strPhotoLocations"></param>
         /// <param name="intMLSType"></param>
-        public void ImportPropertyPhotos(string strMLSID, string strPhotoLocations)
+        public void ImportPropertyPhotos(string strMLSID, string strPhotoLocations, MLSType intFeedType)
         {
             string[] arrPhotoLocations = strPhotoLocations.Split(',');
             string strCommand = string.Format(@" INSERT INTO photo_links_aik (link,propid,label,sequence,timestamp,portrait) 
                                                  VALUES (@photo_url,@propid,'',@photo_seq,@time,'False')");
+
+            if(intFeedType == MLSType.Augusta)
+            {
+                strCommand = string.Format(@" INSERT INTO photo_links_aug (link,propid,label,sequence,timestamp,portrait) 
+                                                 VALUES (@photo_url,@propid,'',@photo_seq,@time,'False')");
+            }
 
             using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ConnectionString))
             {
