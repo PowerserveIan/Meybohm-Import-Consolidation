@@ -248,7 +248,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
             if(!this.blnIsIncremental)
             {
-                strMeybohmImportURL += "version=full";
+                strMeybohmImportURL += "?version=full&resetLock=1";
             }
 
             this.WriteToLog("Running URL: " + strMeybohmImportURL);
