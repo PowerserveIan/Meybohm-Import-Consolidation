@@ -69,6 +69,10 @@ namespace Meybohm_REAMLS_Consolidation
             utilityLibrary.ExecuteBuildFromFactsProcess();
             utilityLibrary.WriteToLog("<h3>6)Completed BuildFromFacts via URL Call: " + DateTime.Now.ToString("G") + "</h3>");
 
+            utilityLibrary.WriteToLog("<h3>7)Running Photo Test: " + DateTime.Now.ToString("G") + "</h3>");
+            utilityLibrary.ExecutePhotoTest();
+            utilityLibrary.WriteToLog("<h3>7)Completed Running Photo Test: " + DateTime.Now.ToString("G") + "</h3>");
+
             utilityLibrary.WriteToLog("<h2>Parsing and concatenation of files has been finished: " + DateTime.Now.ToString("G") + "</h2>");
 
             // Write out the statistics

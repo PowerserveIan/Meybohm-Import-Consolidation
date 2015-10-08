@@ -41,6 +41,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
         private int intTotalAugustaAgents = 0;
 
         private Task[] taskPool = new Task[25];
+
+        private Dictionary<string, string> dictMlsPhotos = new Dictionary<string,string>();
         
         #endregion
 
@@ -298,6 +300,53 @@ namespace Meybohm_REAMLS_Consolidation.Model
             {
                 this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running BuildFromFacts Web Service: " + ex.Message + "</i></b>");
                 this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running BuildFromFacts Web Service Details: " + ex.StackTrace + "</i></b>");
+            }
+        }
+
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public void ExecutePhotoTest()
+        {
+            string strMeybohmURL = Constant.LISTING_URL;
+
+            string strImageURL = "";
+            string strServiceResponse = "";
+
+            for (int intCounter = 0; intCounter < 10; intCounter++)
+            {
+                List<string> listKeys = new List<string>(dictMlsPhotos.Keys);
+                int intDictSize = dictMlsPhotos.Count;
+                
+                string strMlsID = listKeys[intCounter];
+                string strPhotoURL = dictMlsPhotos[strMlsID].ToString();
+                if (strPhotoURL.IndexOf(',') > -1)
+                {
+                    strPhotoURL = strPhotoURL.Substring(0, strPhotoURL.IndexOf(','));
+                }
+                Uri strMlsURL = new Uri(Constant.PHOTO_TEST[strMlsID]);
+
+                this.WriteToLog("<br /><br />Testing Photo for MLS ID " + strMlsID + "<br />Photo URL: " + strPhotoURL + "<br/>MLS URL: " + strMlsURL + "");
+                try
+                {
+                    WebRequest webRequest = WebRequest.Create(strMlsURL);
+                    webRequest.Timeout = 4 * 60 * 60 * 1000; // 4 hours
+                    WebResponse webResponse = webRequest.GetResponse();
+                    Stream streamData = webResponse.GetResponseStream();
+                    using (StreamReader srReader = new StreamReader(streamData))
+                    {
+                        strServiceResponse = srReader.ReadToEnd();
+
+                        if (strServiceResponse.IndexOf(strPhotoURL) < 0)
+                            this.WriteToLog("<br /><b><i style=\"color:red;\">PHOTO NOT FOUND</i></b>");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running Photo Test: " + ex.Message + "</i></b>");
+                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running Photo Test Details: " + ex.StackTrace + "</i></b>");
+                }
             }
         }
 
@@ -679,7 +728,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
             string strFolder = intCityType == CityType.Aiken ? Constant.AIKEN_DOWNLOAD_FOLDER : Constant.AUGUSTA_DOWNLOAD_FOLDER;
             string[] arrFilePaths = Directory.GetFiles(strFolder, "*.csv");
             List<string> listFilePaths = new List<string>();
-
+            
             for(int intIndex = 0; intIndex < arrFilePaths.Length; intIndex++)
             {
                 if(arrFilePaths[intIndex].Contains("Inc.csv") && this.blnIsIncremental)
@@ -782,14 +831,38 @@ namespace Meybohm_REAMLS_Consolidation.Model
                             command.ExecuteNonQuery();
                             connection.Close();
                         }
+
+
                     }
                 }
             }
 
-            //for(int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
-            //{
+            //Check if photos are expired
+            for (int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
+            {
+                try
+                {
+                    WebRequest webRequest = WebRequest.Create(arrPhotoLocations[intIndex]);
+                    WebResponse webResponse = webRequest.GetResponse();
+                    string strWebResponse = webResponse.Headers["Content-Disposition"];
+                    string strFile = strWebResponse.Substring(strWebResponse.IndexOf("filename=") + "filename=".Length).Trim();
+                    string strExpiredFileName = "photo_expired.gif";
 
-            //}
+                    //Check if this is the expired file
+                    if (strFile == strExpiredFileName)
+                    {
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Photo Expired (" + arrPhotoLocations[intIndex] + ").</i></b>");
+                    }
+                }
+                catch (WebException ex)
+                {
+                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error in WebResponse for Photo (" + arrPhotoLocations[intIndex] + "): " + ex.Message + ".</i></b>");
+                }
+                catch (Exception ex)
+                {
+                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error in Request for Photo (" + arrPhotoLocations[intIndex] + "): " + ex.Message + ".</i></b>");
+                }
+            }
         }
         
         /// <summary>
@@ -910,6 +983,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// <param name="arrFilePaths"></param>
         public void ProcessAikenFiles(string[] arrFilePaths, FeedType intFeedType)
         {
+            
             string strConsolidationFolder = Constant.CONSOLIDATION_FOLDER;
             string strArchiveFolder = Constant.AIKEN_ARCHIVE_FOLDER;
             string strFileName, strFullFilePath;
@@ -1224,6 +1298,15 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                 }
 
                                 // TODO: Save information in Linux Server
+
+                                //Add data mls id, photo url to dictionary
+                                if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential) 
+                                {
+                                    if (Constant.PHOTO_TEST.ContainsKey(arrColumns[(int)Aiken_RES_Fields.MLS_Number]) && !dictMlsPhotos.ContainsKey(arrColumns[(int)Aiken_RES_Fields.MLS_Number]))
+                                    { 
+                                        dictMlsPhotos.Add(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Photo_Location]);
+                                    }
+                                }
 
                                 // Write out the columns in sequential order, the columns should have been defined sequentially
                                 for (int intIndex = 0; intIndex < arrColumns.Length; intIndex++)
@@ -1645,6 +1728,15 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                 }
 
                                 // TODO: Save information in Linux Server
+
+                                //Add data mls id, photo url to dictionary
+                                if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential)
+                                {
+                                    if (Constant.PHOTO_TEST.ContainsKey(arrColumns[(int)Augusta_RES_Fields.MLS_Number]) && !dictMlsPhotos.ContainsKey(arrColumns[(int)Augusta_RES_Fields.MLS_Number]))
+                                    {
+                                        dictMlsPhotos.Add(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Photo_location]);
+                                    }
+                                }
 
                                 // Write out the columns in sequential order, the columns should have been defined sequentially
                                 for (int intIndex = 0; intIndex < arrColumns.Length; intIndex++)

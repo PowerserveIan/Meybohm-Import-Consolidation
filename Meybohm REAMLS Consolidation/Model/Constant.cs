@@ -27,10 +27,25 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
         public static string MEYBOHM_IMPORT_URL = ConfigurationManager.AppSettings["MEYBOHM_IMPORT_URL"];
         public static string BUILD_FROM_FACTS_URL = ConfigurationManager.AppSettings["BUILD_FROM_FACTS_URL"];
+
+        public static string LISTING_URL = ConfigurationManager.AppSettings["LISTING_URL"];
         
         public static string GOOGLE_API_STATUS_OVER_LIMIT = "OVER_QUERY_LIMIT";
         public static string GOOGLE_API_ZERO_RESULTS = "ZERO_RESULTS";
         public static string[] EMAIL_RECEIVER = ConfigurationManager.AppSettings["EMAIL_RECEIVER"].Split(';');
+
+        public static Dictionary<string, string> PHOTO_TEST = new Dictionary<string, string>() {
+            {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_1"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_1"]},
+            {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_2"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_2"]},
+            {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_3"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_3"]},
+            {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_4"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_4"]},
+            {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_5"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_5"]},
+            {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_6"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_6"]},
+            {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_7"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_7"]},
+            {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_8"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_8"]},
+            {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_9"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_9"]},
+            {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_10"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_10"]}
+        };
     }
 
     public enum MLSType
