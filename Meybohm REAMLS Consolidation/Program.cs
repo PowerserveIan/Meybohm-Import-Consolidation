@@ -12,8 +12,15 @@ namespace Meybohm_REAMLS_Consolidation
     {
         public static void Main(string[] arrParameters)
         {
-            bool blnIsIncremental = (arrParameters.Length > 0 && arrParameters[0] == "Inc");
+            if (arrParameters.Length == 0 || (arrParameters[0].ToLower() != "inc" && arrParameters[0].ToLower() != "full"))
+            {
+                Console.WriteLine("You must specify a parameter of Full or Inc");
+                return;
+            }
+
+            bool blnIsIncremental = (arrParameters.Length > 0 && arrParameters[0].ToLower() == "inc");
             string[] arrFileList;
+
             UtilityLibrary utilityLibrary = new UtilityLibrary(blnIsIncremental);
 
             utilityLibrary.WriteToLog("");
@@ -56,7 +63,7 @@ namespace Meybohm_REAMLS_Consolidation
             utilityLibrary.MigrateAugustaMySQLData();
 
             utilityLibrary.WriteToLog("<h3>3) Finished Migrating Augusta MySQL Data. " + DateTime.Now.ToString("G") + "</h3>");
-
+            
             utilityLibrary.WriteToLog("<h3>4)Starting Archive Process...</h3>");
             utilityLibrary.ArchiveFiles();
             utilityLibrary.WriteToLog("<h3>4)Finished Archive Process.</h3>");
@@ -69,9 +76,11 @@ namespace Meybohm_REAMLS_Consolidation
             utilityLibrary.ExecuteBuildFromFactsProcess();
             utilityLibrary.WriteToLog("<h3>6)Completed BuildFromFacts via URL Call: " + DateTime.Now.ToString("G") + "</h3>");
 
-            utilityLibrary.WriteToLog("<h3>7)Running Photo Test: " + DateTime.Now.ToString("G") + "</h3>");
-            utilityLibrary.ExecutePhotoTest();
-            utilityLibrary.WriteToLog("<h3>7)Completed Running Photo Test: " + DateTime.Now.ToString("G") + "</h3>");
+            if (!blnIsIncremental) { 
+                utilityLibrary.WriteToLog("<h3>7)Running Photo Test: " + DateTime.Now.ToString("G") + "</h3>");
+                utilityLibrary.ExecutePhotoTest();
+                utilityLibrary.WriteToLog("<h3>7)Completed Running Photo Test: " + DateTime.Now.ToString("G") + "</h3>");
+            }
 
             utilityLibrary.WriteToLog("<h2>Parsing and concatenation of files has been finished: " + DateTime.Now.ToString("G") + "</h2>");
 

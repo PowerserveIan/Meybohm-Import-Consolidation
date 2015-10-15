@@ -209,14 +209,14 @@ namespace Meybohm_REAMLS_Consolidation.Model
             MailMessage mailMessage = new MailMessage();
             SmtpClient mailSMTPClient = new SmtpClient();
             StringBuilder sbMessage = new StringBuilder();
-            MailAddress fromAddress = new MailAddress("support@powerserve.net");
+            MailAddress fromAddress = new MailAddress("realestate@powerserve.net");
 
             //mailSMTPClient.DeliveryMethod = SmtpDeliveryMethod.PickupDirectoryFromIis;
 
-            mailSMTPClient.Credentials = new NetworkCredential("ian.nielson@powerserve.net", "nielson9%1");
-            mailSMTPClient.Port = 587;
-            mailSMTPClient.Host = "smtp.gmail.com";
-            mailSMTPClient.EnableSsl = true;
+            //mailSMTPClient.Credentials = new NetworkCredential("ian.nielson@powerserve.net", "nielson9%1");
+            mailSMTPClient.Port = 25;
+            mailSMTPClient.Host = "localhost";
+            //mailSMTPClient.EnableSsl = true;
 
             mailMessage.From = fromAddress;
             mailMessage.IsBodyHtml = true;
@@ -257,7 +257,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
             try
             {
-                WebRequest webRequest = WebRequest.Create(new Uri(Constant.MEYBOHM_IMPORT_URL));
+                WebRequest webRequest = WebRequest.Create(new Uri(strMeybohmImportURL));
                 webRequest.Timeout = 4 * 60 * 60 * 1000; // 4 hours
                 WebResponse webResponse = webRequest.GetResponse();
                 Stream streamData = webResponse.GetResponseStream();
@@ -314,39 +314,48 @@ namespace Meybohm_REAMLS_Consolidation.Model
             string strImageURL = "";
             string strServiceResponse = "";
 
-            for (int intCounter = 0; intCounter < 10; intCounter++)
+            try
             {
-                List<string> listKeys = new List<string>(dictMlsPhotos.Keys);
-                int intDictSize = dictMlsPhotos.Count;
-                
-                string strMlsID = listKeys[intCounter];
-                string strPhotoURL = dictMlsPhotos[strMlsID].ToString();
-                if (strPhotoURL.IndexOf(',') > -1)
+                for (int intCounter = 0; intCounter < dictMlsPhotos.Keys.Count; intCounter++)
                 {
-                    strPhotoURL = strPhotoURL.Substring(0, strPhotoURL.IndexOf(','));
-                }
-                Uri strMlsURL = new Uri(Constant.PHOTO_TEST[strMlsID]);
+                    List<string> listKeys = new List<string>(dictMlsPhotos.Keys);
+                    int intDictSize = dictMlsPhotos.Count;
 
-                this.WriteToLog("<br /><br />Testing Photo for MLS ID " + strMlsID + "<br />Photo URL: " + strPhotoURL + "<br/>MLS URL: " + strMlsURL + "");
-                try
-                {
-                    WebRequest webRequest = WebRequest.Create(strMlsURL);
-                    webRequest.Timeout = 4 * 60 * 60 * 1000; // 4 hours
-                    WebResponse webResponse = webRequest.GetResponse();
-                    Stream streamData = webResponse.GetResponseStream();
-                    using (StreamReader srReader = new StreamReader(streamData))
+                    string strMlsID = listKeys[intCounter];
+                    string strPhotoURL = dictMlsPhotos[strMlsID].ToString();
+                    if (strPhotoURL.IndexOf(',') > -1)
                     {
-                        strServiceResponse = srReader.ReadToEnd();
+                        strPhotoURL = strPhotoURL.Substring(0, strPhotoURL.IndexOf(','));
+                    }
+                    Uri strMlsURL = new Uri(Constant.PHOTO_TEST[strMlsID]);
 
-                        if (strServiceResponse.IndexOf(strPhotoURL) < 0)
-                            this.WriteToLog("<br /><b><i style=\"color:red;\">PHOTO NOT FOUND</i></b>");
+                    this.WriteToLog("<br /><br />Testing Photo for MLS ID " + strMlsID + "<br />Photo URL: " + strPhotoURL + "<br/>MLS URL: " + strMlsURL + "");
+                    try
+                    {
+                        WebRequest webRequest = WebRequest.Create(strMlsURL);
+                        webRequest.Timeout = 4 * 60 * 60 * 1000; // 4 hours
+                        WebResponse webResponse = webRequest.GetResponse();
+                        Stream streamData = webResponse.GetResponseStream();
+                        using (StreamReader srReader = new StreamReader(streamData))
+                        {
+                            strServiceResponse = srReader.ReadToEnd();
+
+                            if (strServiceResponse.IndexOf(strPhotoURL) < 0)
+                                this.WriteToLog("<br /><b><i style=\"color:red;\">PHOTO NOT FOUND</i></b>");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running Photo Test: " + ex.Message + "</i></b>");
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running Photo Test Details: " + ex.StackTrace + "</i></b>");
                     }
                 }
-                catch (Exception ex)
-                {
-                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running Photo Test: " + ex.Message + "</i></b>");
-                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running Photo Test Details: " + ex.StackTrace + "</i></b>");
-                }
+            }
+
+            catch (Exception ex)
+            {
+                this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running Photo Test: " + ex.Message + "</i></b>");
+                this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running Photo Test Details: " + ex.StackTrace + "</i></b>");
             }
         }
 
@@ -844,31 +853,35 @@ namespace Meybohm_REAMLS_Consolidation.Model
             }
 
             //Check if photos are expired
-            for (int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
-            {
-                try
+            /*
+            if (Constant.PHOTO_TEST.ContainsKey(strMLSID)) { 
+                for (int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
                 {
-                    WebRequest webRequest = WebRequest.Create(arrPhotoLocations[intIndex]);
-                    WebResponse webResponse = webRequest.GetResponse();
-                    string strWebResponse = webResponse.Headers["Content-Disposition"];
-                    string strFile = strWebResponse.Substring(strWebResponse.IndexOf("filename=") + "filename=".Length).Trim();
-                    string strExpiredFileName = "photo_expired.gif";
-
-                    //Check if this is the expired file
-                    if (strFile == strExpiredFileName)
+                    try
                     {
-                        this.WriteToLog("<br /><b><i style=\"color:red;\">Photo Expired (" + arrPhotoLocations[intIndex] + ").</i></b>");
+                        WebRequest webRequest = WebRequest.Create(arrPhotoLocations[intIndex]);
+                        WebResponse webResponse = webRequest.GetResponse();
+                        string strWebResponse = webResponse.Headers["Content-Disposition"];
+                        string strFile = strWebResponse.Substring(strWebResponse.IndexOf("filename=") + "filename=".Length).Trim();
+                        string strExpiredFileName = "photo_expired.gif";
+
+                        //Check if this is the expired file
+                        if (strFile == strExpiredFileName)
+                        {
+                            this.WriteToLog("<br /><b><i style=\"color:red;\">Photo Expired (" + arrPhotoLocations[intIndex] + ").</i></b>");
+                        }
+                    }
+                    catch (WebException ex)
+                    {
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Error in WebResponse for Photo (" + arrPhotoLocations[intIndex] + "): " + ex.Message + ".</i></b>");
+                    }
+                    catch (Exception ex)
+                    {
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Error in Request for Photo (" + arrPhotoLocations[intIndex] + "): " + ex.Message + ".</i></b>");
                     }
                 }
-                catch (WebException ex)
-                {
-                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error in WebResponse for Photo (" + arrPhotoLocations[intIndex] + "): " + ex.Message + ".</i></b>");
-                }
-                catch (Exception ex)
-                {
-                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error in Request for Photo (" + arrPhotoLocations[intIndex] + "): " + ex.Message + ".</i></b>");
-                }
             }
+             */
         }
         
         /// <summary>
@@ -989,7 +1002,6 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// <param name="arrFilePaths"></param>
         public void ProcessAikenFiles(string[] arrFilePaths, FeedType intFeedType)
         {
-            
             string strConsolidationFolder = Constant.CONSOLIDATION_FOLDER;
             string strArchiveFolder = Constant.AIKEN_ARCHIVE_FOLDER;
             string strFileName, strFullFilePath;
