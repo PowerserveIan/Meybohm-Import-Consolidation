@@ -28,6 +28,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
         private bool blnIsIncremental;
         private bool blnGoogleMapsOverLimit;
         private bool blnErrorsFound;
+        private bool bBlockPropertyPurge;
 
         private StringBuilder sbLogBuilder;
 
@@ -42,7 +43,11 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
         private Task[] taskPool = new Task[25];
 
+        private bool bFatalError = false;
+
         private Dictionary<string, string> dictMlsPhotos = new Dictionary<string,string>();
+
+        private MySqlConnection connMySqlConnection;
         
         #endregion
 
@@ -54,6 +59,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
         public UtilityLibrary(bool blnIsIncremental)
         {
             this.blnIsIncremental = blnIsIncremental;
+
             blnGoogleMapsOverLimit = false;
             blnErrorsFound = false;
 
@@ -62,10 +68,21 @@ namespace Meybohm_REAMLS_Consolidation.Model
             this.CheckDirectoriesAndFiles();
             this.RemoveOldFiles();
 
-            if(!this.blnIsIncremental)
-            {
-                this.ClearMySQLData();
+
+            try { 
+                connMySqlConnection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString());
+                connMySqlConnection.Open();
+
+                if(!this.blnIsIncremental)
+                {
+                    this.ClearMySQLData();
+                }
             }
+            catch (Exception ex)
+            {
+                this.WriteToLog("<br /><b><i style=\"color:red;\">Error Opening MySql connection - Details: " + ex.Message + "</i></b>");
+            }
+
         }
 
         #endregion
@@ -181,21 +198,37 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                    TRUNCATE TABLE aux_agents;
                                    TRUNCATE TABLE aux_offices; ";
 
-            using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
+            //using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
+            if (connMySqlConnection.State == ConnectionState.Open)
             {
-                using(MySqlCommand command = new MySqlCommand(strCommand, connection))
+                using(MySqlCommand command = new MySqlCommand(strCommand, connMySqlConnection))
                 {
+                    command.CommandTimeout = 300;
+
                     try
                     {
-                        connection.Open();
+                        //connMySqlConnection.Open();
                         command.ExecuteNonQuery();
-                        connection.Close();
+                        //connection.Close();
                     }
                     catch (Exception ex)
                     {
+                        bFatalError = true;
                         this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running ClearMySQLData SQL - Details: " + ex.Message + "</i></b>");
                     }
                 }
+            }
+        }
+
+        public void CloseMySqlConnection()
+        {
+            try
+            {
+                connMySqlConnection.Close();
+            }
+            catch (Exception ex)
+            {
+
             }
         }
 
@@ -204,40 +237,69 @@ namespace Meybohm_REAMLS_Consolidation.Model
         /// </summary>
         public void EmailLogStatus()
         {
-            string strSubject;
+            try { 
+                string strSubject;
 
-            MailMessage mailMessage = new MailMessage();
-            SmtpClient mailSMTPClient = new SmtpClient();
-            StringBuilder sbMessage = new StringBuilder();
-            MailAddress fromAddress = new MailAddress("realestate@powerserve.net");
+                MailMessage mailMessage = new MailMessage();
+                SmtpClient mailSMTPClient = new SmtpClient();
+                StringBuilder sbMessage = new StringBuilder();
+                MailAddress fromAddress; 
+                
+                if (Constant.EMAIL_SENDER == "localhost")
+                    fromAddress = new MailAddress("realestate@powerserve.net");
+                else
+                    fromAddress = new MailAddress(Constant.EMAIL_SENDER);
 
-            //mailSMTPClient.DeliveryMethod = SmtpDeliveryMethod.PickupDirectoryFromIis;
+                //mailSMTPClient.DeliveryMethod = SmtpDeliveryMethod.PickupDirectoryFromIis;
 
-            //mailSMTPClient.Credentials = new NetworkCredential("ian.nielson@powerserve.net", "nielson9%1");
-            mailSMTPClient.Port = 25;
-            mailSMTPClient.Host = "localhost";
-            //mailSMTPClient.EnableSsl = true;
+                if (Constant.EMAIL_SENDER == "localhost")
+                {
+                    mailSMTPClient.Port = 25;
+                    mailSMTPClient.Host = "localhost";
+                }
+                else
+                { 
+                    mailSMTPClient.Credentials = new NetworkCredential("allen@powerserve.net", "powell3$5");
+                    mailSMTPClient.Port = 587;
+                    mailSMTPClient.Host = "smtp.gmail.com";
+                    mailSMTPClient.EnableSsl = true;
+                }
+                mailMessage.From = fromAddress;
+                mailMessage.IsBodyHtml = true;
 
-            mailMessage.From = fromAddress;
-            mailMessage.IsBodyHtml = true;
+                if (this.blnIsIncremental) {
+                    if (!bFatalError) //Don't send incremental success
+                        return;
+                    foreach (string strEmailAddress in Constant.EMAIL_RECEIVER_INC)
+                    {
+                        mailMessage.To.Add(strEmailAddress);
+                    }
+                }
+                else 
+                { 
+                    foreach (string strEmailAddress in Constant.EMAIL_RECEIVER)
+                    {
+                        mailMessage.To.Add(strEmailAddress);
+                    }
+                }
 
-            foreach (string strEmailAddress in Constant.EMAIL_RECEIVER)
-            {
-                mailMessage.To.Add(strEmailAddress);
+                strSubject = string.Format("{2} Meybohm Import Process ({0}) - {1}", (blnIsIncremental) ? "Incremental" : "Full", DateTime.Now.ToString("G"), (bFatalError) ? "FAILURE" : "SUCCESS");
+
+                sbMessage.Append("Hello,");
+                sbMessage.Append("<br />");
+                sbMessage.Append("<br />The following is the the log report for the recent execution of the Meybohm Import Process. Please see the file below for more information.");
+                sbMessage.Append("<h2>File: " + Constant.LOG_FILE + "</h2>");
+                sbMessage.Append(this.sbLogBuilder.ToString());
+
+                mailMessage.Subject = strSubject;
+                mailMessage.Body = sbMessage.ToString();
+
+                mailSMTPClient.Send(mailMessage);
             }
-
-            strSubject = string.Format("Meybohm Import Process ({0}) - {1}: {2}", (blnIsIncremental) ? "Incremental" : "Full", DateTime.Now.ToString("G"), (blnErrorsFound) ? "Error Occured" : "Successful");
-
-            sbMessage.Append("Hello,");
-            sbMessage.Append("<br />");
-            sbMessage.Append("<br />The following is the the log report for the recent execution of the Meybohm Import Process. Please see the file below for more information.");
-            sbMessage.Append("<h2>File: " + Constant.LOG_FILE + "</h2>");
-            sbMessage.Append(this.sbLogBuilder.ToString());
-
-            mailMessage.Subject = strSubject;
-            mailMessage.Body = sbMessage.ToString();
-
-            mailSMTPClient.Send(mailMessage);
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
         }
 
         /// <summary>
@@ -251,6 +313,11 @@ namespace Meybohm_REAMLS_Consolidation.Model
             if(!this.blnIsIncremental)
             {
                 strMeybohmImportURL += "?version=full&resetLock=1";
+
+                if (this.bBlockPropertyPurge)
+                {
+                    strMeybohmImportURL += "&blockpurge=1";
+                }
             }
 
             this.WriteToLog("Running URL: " + strMeybohmImportURL);
@@ -269,6 +336,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
             }
             catch(Exception ex)
             {
+                bFatalError = true;
                 this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running UpdateFromXML Web Service: " + ex.Message + "</i></b>");
                 this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running UpdateFromXML Web Service Details: " + ex.StackTrace + "</i></b>");
             }
@@ -298,6 +366,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
             }
             catch (Exception ex)
             {
+                bFatalError = true;
                 this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running BuildFromFacts Web Service: " + ex.Message + "</i></b>");
                 this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running BuildFromFacts Web Service Details: " + ex.StackTrace + "</i></b>");
             }
@@ -372,11 +441,14 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
             try
             {
-                using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
+                //using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
+                if (connMySqlConnection.State == ConnectionState.Open)
                 {
-                    MySqlCommand command = connection.CreateCommand();
-                    MySqlCommand commandSupport = connection.CreateCommand();
+                    MySqlCommand command = connMySqlConnection.CreateCommand();
+                    MySqlCommand commandSupport = connMySqlConnection.CreateCommand();
 
+                    command.CommandTimeout = 300;
+                    
                     string strAgentId = "";
 
                     if (intMLSType == MLSType.Aiken)
@@ -684,10 +756,10 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
                     try
                     {
-                        connection.Open();
+                        //connection.Open();
                         command.ExecuteNonQuery();
                         commandSupport.ExecuteNonQuery();
-                        connection.Close();
+                        //connection.Close();
                     }
                     catch (MySqlException ex)
                     {
@@ -697,6 +769,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
             }
             catch (Exception ex)
             {
+                bFatalError = true;
                 this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running ExportMySQLData: " + ex.Message + "</i></b>");
                 this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running ExportMySQLData - Details: " + ex.StackTrace + "</i></b>");
             }
@@ -766,6 +839,18 @@ namespace Meybohm_REAMLS_Consolidation.Model
                 }
             }
 
+            if (!this.blnIsIncremental)
+            {
+                if (Constant.FILE_COUNT.ContainsKey(intCityType + "_" + intFeedType)) { 
+                    if (Constant.FILE_COUNT[intCityType + "_" + intFeedType] != listFilePaths.Count)
+                    {
+                        bFatalError = true;
+                        this.WriteToLog("<br /><b><i style=\"color:red;\">Missing file for " + Enum.GetName(typeof(CityType), intCityType) + " " + Enum.GetName(typeof(FeedType), intFeedType) + "</i></b>");
+                        this.bBlockPropertyPurge = true;
+                    }
+                }
+            }
+
             return listFilePaths.ToArray();
         }
 
@@ -827,13 +912,14 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                                  VALUES (@photo_url,@propid,'',@photo_seq,@time,'False')");
             }
 
-            using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ConnectionString))
+            //using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ConnectionString))
+            if (connMySqlConnection.State == ConnectionState.Open)
             {
                 for (int intIndex = 0; intIndex < arrPhotoLocations.Length; intIndex++)
                 {
                     if (!string.IsNullOrEmpty(arrPhotoLocations[intIndex]))
                     {
-                        using (MySqlCommand command = new MySqlCommand(strCommand, connection))
+                        using (MySqlCommand command = new MySqlCommand(strCommand, connMySqlConnection))
                         {
                             command.CommandTimeout = 300;
 
@@ -842,9 +928,9 @@ namespace Meybohm_REAMLS_Consolidation.Model
                             command.Parameters.AddWithValue("@propid", strMLSID);
                             command.Parameters.AddWithValue("@time", DateTime.Now.ToString("G"));
 
-                            connection.Open();
+                            //connection.Open();
                             command.ExecuteNonQuery();
-                            connection.Close();
+                            //connection.Close();
                         }
 
 
@@ -1009,6 +1095,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
             string[] strGeoLocation;
             bool blnWriteHeader = false;
             bool blnSkipHeader = true;
+            bool bRecordFound = false;
 
             string[] arrColumns = null;
 
@@ -1090,6 +1177,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
                 {
                     blnSkipHeader = true;
 
+                    bRecordFound = false;
+
                     using (TextFieldParser parser = new TextFieldParser(arrFilePaths[intFileIndex]))
                     {
                         parser.Delimiters = new string[] { "," };
@@ -1117,230 +1206,255 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                     arrColumns[intIndex] = "";
                                 }
 
-                                if (intFeedType == FeedType.Residential)
-                                {
-                                    arrColumns[(int)Aiken_RES_Fields.Address] = BoundaryFields[(int)Aiken_RES_Fields.Address];
-                                    arrColumns[(int)Aiken_RES_Fields.Air_Conditioning] = BoundaryFields[(int)Aiken_RES_Fields.Air_Conditioning];
-                                    arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] = BoundaryFields[(int)Aiken_RES_Fields.Apx_Heated_SqFt];
-                                    arrColumns[(int)Aiken_RES_Fields.Attic] = BoundaryFields[(int)Aiken_RES_Fields.Attic];
-                                    arrColumns[(int)Aiken_RES_Fields.Bedrooms] = BoundaryFields[(int)Aiken_RES_Fields.Bedrooms];
-                                    arrColumns[(int)Aiken_RES_Fields.Builder_Name] = BoundaryFields[(int)Aiken_RES_Fields.Builder_Name];
-                                    arrColumns[(int)Aiken_RES_Fields.City] = BoundaryFields[(int)Aiken_RES_Fields.City];
-                                    arrColumns[(int)Aiken_RES_Fields.Directions] = BoundaryFields[(int)Aiken_RES_Fields.Directions];
-                                    arrColumns[(int)Aiken_RES_Fields.Elementary_School] = BoundaryFields[(int)Aiken_RES_Fields.Elementary_School];
-                                    arrColumns[(int)Aiken_RES_Fields.Exterior_Features] = BoundaryFields[(int)Aiken_RES_Fields.Exterior_Features];
-                                    arrColumns[(int)Aiken_RES_Fields.Floors] = BoundaryFields[(int)Aiken_RES_Fields.Floors];
-                                    arrColumns[(int)Aiken_RES_Fields.Foundation_Basement] = BoundaryFields[(int)Aiken_RES_Fields.Foundation_Basement];
-                                    arrColumns[(int)Aiken_RES_Fields.Full_Baths] = BoundaryFields[(int)Aiken_RES_Fields.Full_Baths];
-                                    arrColumns[(int)Aiken_RES_Fields.Garage] = BoundaryFields[(int)Aiken_RES_Fields.Garage];
-                                    arrColumns[(int)Aiken_RES_Fields.Half_Baths] = BoundaryFields[(int)Aiken_RES_Fields.Half_Baths];
-                                    arrColumns[(int)Aiken_RES_Fields.High_School] = BoundaryFields[(int)Aiken_RES_Fields.High_School];
-                                    arrColumns[(int)Aiken_RES_Fields.Interior_Features] = BoundaryFields[(int)Aiken_RES_Fields.Interior_Features];
-                                    arrColumns[(int)Aiken_RES_Fields.LA_ID] = BoundaryFields[(int)Aiken_RES_Fields.LA_ID];
-                                    arrColumns[(int)Aiken_RES_Fields.Latitude] = BoundaryFields[(int)Aiken_RES_Fields.Latitude];
-                                    arrColumns[(int)Aiken_RES_Fields.List_Date] = BoundaryFields[(int)Aiken_RES_Fields.List_Date];
-                                    arrColumns[(int)Aiken_RES_Fields.List_Price] = BoundaryFields[(int)Aiken_RES_Fields.List_Price];
-                                    arrColumns[(int)Aiken_RES_Fields.Listing_Office] = BoundaryFields[(int)Aiken_RES_Fields.Listing_Office];
-                                    arrColumns[(int)Aiken_RES_Fields.Longitude] = BoundaryFields[(int)Aiken_RES_Fields.Longitude];
-                                    arrColumns[(int)Aiken_RES_Fields.Middle_School] = BoundaryFields[(int)Aiken_RES_Fields.Middle_School];
-                                    arrColumns[(int)Aiken_RES_Fields.MLS_Number] = BoundaryFields[(int)Aiken_RES_Fields.MLS_Number];
-                                    arrColumns[(int)Aiken_RES_Fields.New_Construction] = BoundaryFields[(int)Aiken_RES_Fields.New_Construction];
-                                    arrColumns[(int)Aiken_RES_Fields.Photo_Location] = BoundaryFields[(int)Aiken_RES_Fields.Photo_Location];
-                                    arrColumns[(int)Aiken_RES_Fields.Property_Description] = BoundaryFields[(int)Aiken_RES_Fields.Property_Description];
-                                    arrColumns[(int)Aiken_RES_Fields.Property_Status] = BoundaryFields[(int)Aiken_RES_Fields.Property_Status];
-                                    arrColumns[(int)Aiken_RES_Fields.Property_Type] = BoundaryFields[(int)Aiken_RES_Fields.Property_Type];
-                                    arrColumns[(int)Aiken_RES_Fields.State] = BoundaryFields[(int)Aiken_RES_Fields.State];
-                                    arrColumns[(int)Aiken_RES_Fields.Street_Number] = BoundaryFields[(int)Aiken_RES_Fields.Street_Number];
-                                    arrColumns[(int)Aiken_RES_Fields.Style] = BoundaryFields[(int)Aiken_RES_Fields.Style];
-                                    arrColumns[(int)Aiken_RES_Fields.Total_Acres] = BoundaryFields[(int)Aiken_RES_Fields.Total_Acres];
-                                    arrColumns[(int)Aiken_RES_Fields.Town_Subdivision] = BoundaryFields[(int)Aiken_RES_Fields.Town_Subdivision];
-                                    arrColumns[(int)Aiken_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Aiken_RES_Fields.Virtual_Tour];
-                                    arrColumns[(int)Aiken_RES_Fields.Year_Built] = BoundaryFields[(int)Aiken_RES_Fields.Year_Built];
-                                    arrColumns[(int)Aiken_RES_Fields.Zip_Code] = BoundaryFields[(int)Aiken_RES_Fields.Zip_Code];
-                                }
-                                else if (intFeedType == FeedType.Land)
-                                {
-                                    arrColumns[(int)Aiken_RES_Fields.Address] = BoundaryFields[(int)Aiken_LAND_Fields.Address];
-                                    arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] = BoundaryFields[(int)Aiken_LAND_Fields.Apx_Heated_SqFt];
-                                    arrColumns[(int)Aiken_RES_Fields.Total_Acres] = BoundaryFields[(int)Aiken_LAND_Fields.Apx_Total_Acreage];
-                                    arrColumns[(int)Aiken_RES_Fields.City] = BoundaryFields[(int)Aiken_LAND_Fields.City];
-                                    arrColumns[(int)Aiken_RES_Fields.Directions] = BoundaryFields[(int)Aiken_LAND_Fields.Directions];
-                                    arrColumns[(int)Aiken_RES_Fields.Elementary_School] = BoundaryFields[(int)Aiken_LAND_Fields.Elementary_School];
-                                    arrColumns[(int)Aiken_RES_Fields.High_School] = BoundaryFields[(int)Aiken_LAND_Fields.High_School];
-                                    arrColumns[(int)Aiken_RES_Fields.LA_ID] = BoundaryFields[(int)Aiken_LAND_Fields.LA_ID];
-                                    arrColumns[(int)Aiken_RES_Fields.Latitude] = BoundaryFields[(int)Aiken_LAND_Fields.Latitude];
-                                    arrColumns[(int)Aiken_RES_Fields.List_Date] = BoundaryFields[(int)Aiken_LAND_Fields.List_Date];
-                                    arrColumns[(int)Aiken_RES_Fields.List_Price] = BoundaryFields[(int)Aiken_LAND_Fields.List_Price];
-                                    arrColumns[(int)Aiken_RES_Fields.Listing_Office] = BoundaryFields[(int)Aiken_LAND_Fields.Listing_Office];
-                                    arrColumns[(int)Aiken_RES_Fields.Longitude] = BoundaryFields[(int)Aiken_LAND_Fields.Longitude];
-                                    arrColumns[(int)Aiken_RES_Fields.Middle_School] = BoundaryFields[(int)Aiken_LAND_Fields.Middle_School];
-                                    arrColumns[(int)Aiken_RES_Fields.MLS_Number] = BoundaryFields[(int)Aiken_LAND_Fields.MLS_Number];
-                                    arrColumns[(int)Aiken_RES_Fields.New_Construction] = BoundaryFields[(int)Aiken_LAND_Fields.New_Construction];
-                                    arrColumns[(int)Aiken_RES_Fields.Photo_Location] = BoundaryFields[(int)Aiken_LAND_Fields.Photo_Location];
-                                    arrColumns[(int)Aiken_RES_Fields.Property_Status] = BoundaryFields[(int)Aiken_LAND_Fields.Property_Status];
-                                    arrColumns[(int)Aiken_RES_Fields.Property_Type] = BoundaryFields[(int)Aiken_LAND_Fields.Property_Type];
-                                    arrColumns[(int)Aiken_RES_Fields.Property_Description] = BoundaryFields[(int)Aiken_LAND_Fields.Remarks];
-                                    arrColumns[(int)Aiken_RES_Fields.State] = BoundaryFields[(int)Aiken_LAND_Fields.State];
-                                    arrColumns[(int)Aiken_RES_Fields.Street_Number] = BoundaryFields[(int)Aiken_LAND_Fields.Street_Number];
-                                    arrColumns[(int)Aiken_RES_Fields.Town_Subdivision] = BoundaryFields[(int)Aiken_LAND_Fields.Town_Subdivision];
-                                    arrColumns[(int)Aiken_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Aiken_LAND_Fields.Virtual_Tour];
-                                    arrColumns[(int)Aiken_RES_Fields.Zip_Code] = BoundaryFields[(int)Aiken_LAND_Fields.Zip_Code];
-                                }
-                                else if (intFeedType == FeedType.Agent)
-                                {
-                                    arrColumns[(int)Aiken_Agent_Fields.Agent_Email] = BoundaryFields[(int)Aiken_Agent_Fields.Agent_Email];
-                                    arrColumns[(int)Aiken_Agent_Fields.AGENT_ID] = BoundaryFields[(int)Aiken_Agent_Fields.AGENT_ID];
-                                    arrColumns[(int)Aiken_Agent_Fields.Contact_Number] = BoundaryFields[(int)Aiken_Agent_Fields.Contact_Number];
-                                    arrColumns[(int)Aiken_Agent_Fields.First_Name] = BoundaryFields[(int)Aiken_Agent_Fields.First_Name];
-                                    arrColumns[(int)Aiken_Agent_Fields.Home] = BoundaryFields[(int)Aiken_Agent_Fields.Home];
-                                    arrColumns[(int)Aiken_Agent_Fields.Last_Name] = BoundaryFields[(int)Aiken_Agent_Fields.Last_Name];
-                                    arrColumns[(int)Aiken_Agent_Fields.Mail_Address_1] = BoundaryFields[(int)Aiken_Agent_Fields.Mail_Address_1];
-                                    arrColumns[(int)Aiken_Agent_Fields.Mail_City] = BoundaryFields[(int)Aiken_Agent_Fields.Mail_City];
-                                    arrColumns[(int)Aiken_Agent_Fields.Mail_State] = BoundaryFields[(int)Aiken_Agent_Fields.Mail_State];
-                                    arrColumns[(int)Aiken_Agent_Fields.Mail_Zip_Code] = BoundaryFields[(int)Aiken_Agent_Fields.Mail_Zip_Code];
-                                    arrColumns[(int)Aiken_Agent_Fields.Office_ID] = BoundaryFields[(int)Aiken_Agent_Fields.Office_ID];
-                                    arrColumns[(int)Aiken_Agent_Fields.Web_Address] = BoundaryFields[(int)Aiken_Agent_Fields.Web_Address];
-                                }
-                                else if (intFeedType == FeedType.Office)
-                                {
-                                    arrColumns[(int)Office_Fields.Fax] = BoundaryFields[(int)Office_Fields.Fax];
-                                    arrColumns[(int)Office_Fields.Mail_Address_1] = BoundaryFields[(int)Office_Fields.Mail_Address_1];
-                                    arrColumns[(int)Office_Fields.Mail_City] = BoundaryFields[(int)Office_Fields.Mail_City];
-                                    arrColumns[(int)Office_Fields.Mail_State] = BoundaryFields[(int)Office_Fields.Mail_State];
-                                    arrColumns[(int)Office_Fields.Mail_Zip_Code] = BoundaryFields[(int)Office_Fields.Mail_Zip_Code];
-                                    arrColumns[(int)Office_Fields.Main] = BoundaryFields[(int)Office_Fields.Main];
-                                    arrColumns[(int)Office_Fields.Office_ID] = BoundaryFields[(int)Office_Fields.Office_ID];
-                                    arrColumns[(int)Office_Fields.Office_Name] = BoundaryFields[(int)Office_Fields.Office_Name];
-                                    arrColumns[(int)Office_Fields.Web_Address] = BoundaryFields[(int)Office_Fields.Web_Address];
-                                }
-
-
-                                // Do transformations on RES/LAND Data
-                                if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential)
-                                {
-                                    // Fix Title Type Columns
-                                    arrColumns[(int)Aiken_RES_Fields.Address] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Address]);
-                                    arrColumns[(int)Aiken_RES_Fields.Town_Subdivision] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Town_Subdivision]);
-                                    arrColumns[(int)Aiken_RES_Fields.City] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.City]);
-                                    arrColumns[(int)Aiken_RES_Fields.Exterior_Features] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Exterior_Features]);
-                                    arrColumns[(int)Aiken_RES_Fields.Interior_Features] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Interior_Features]);
-                                    arrColumns[(int)Aiken_RES_Fields.Foundation_Basement] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Foundation_Basement]);
-                                    arrColumns[(int)Aiken_RES_Fields.Floors] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Floors]);
-                                    arrColumns[(int)Aiken_RES_Fields.Garage] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Garage]);
-                                    arrColumns[(int)Aiken_RES_Fields.Attic] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Attic]);
-                                    arrColumns[(int)Aiken_RES_Fields.Air_Conditioning] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Air_Conditioning]);
-                                    arrColumns[(int)Aiken_RES_Fields.Elementary_School] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Elementary_School]);
-                                    arrColumns[(int)Aiken_RES_Fields.Middle_School] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Middle_School]);
-                                    arrColumns[(int)Aiken_RES_Fields.High_School] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.High_School]);
-
-                                    // Fix Capitalize Columns
-                                    arrColumns[(int)Aiken_RES_Fields.State] = arrColumns[(int)Aiken_RES_Fields.State].ToUpper();
-
-                                    // Fix Sentence Type Columns
-                                    arrColumns[(int)Aiken_RES_Fields.Property_Description] = this.FixSentenceCase(arrColumns[(int)Aiken_RES_Fields.Property_Description]);
-
-                                    // Update Agent Id Format.
-                                    arrColumns[(int)Aiken_RES_Fields.LA_ID] = arrColumns[(int)Aiken_RES_Fields.LA_ID].Replace("_", "-");
-
-                                    // Update New Construction
-                                    arrColumns[(int)Aiken_RES_Fields.New_Construction] = (arrColumns[(int)Aiken_RES_Fields.New_Construction] == "1" ? "Y" : "N");
-
-                                    if(intFeedType == FeedType.Land)
+                                try 
+                                { 
+                                    if (intFeedType == FeedType.Residential)
                                     {
-                                        arrColumns[(int)Aiken_RES_Fields.Property_Type] = "Lots/Land";
+                                        arrColumns[(int)Aiken_RES_Fields.Address] = BoundaryFields[(int)Aiken_RES_Fields.Address];
+                                        arrColumns[(int)Aiken_RES_Fields.Air_Conditioning] = BoundaryFields[(int)Aiken_RES_Fields.Air_Conditioning];
+                                        arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] = BoundaryFields[(int)Aiken_RES_Fields.Apx_Heated_SqFt];
+                                        arrColumns[(int)Aiken_RES_Fields.Attic] = BoundaryFields[(int)Aiken_RES_Fields.Attic];
+                                        arrColumns[(int)Aiken_RES_Fields.Bedrooms] = BoundaryFields[(int)Aiken_RES_Fields.Bedrooms];
+                                        arrColumns[(int)Aiken_RES_Fields.Builder_Name] = BoundaryFields[(int)Aiken_RES_Fields.Builder_Name];
+                                        arrColumns[(int)Aiken_RES_Fields.City] = BoundaryFields[(int)Aiken_RES_Fields.City];
+                                        arrColumns[(int)Aiken_RES_Fields.Directions] = BoundaryFields[(int)Aiken_RES_Fields.Directions];
+                                        arrColumns[(int)Aiken_RES_Fields.Elementary_School] = BoundaryFields[(int)Aiken_RES_Fields.Elementary_School];
+                                        arrColumns[(int)Aiken_RES_Fields.Exterior_Features] = BoundaryFields[(int)Aiken_RES_Fields.Exterior_Features];
+                                        arrColumns[(int)Aiken_RES_Fields.Floors] = BoundaryFields[(int)Aiken_RES_Fields.Floors];
+                                        arrColumns[(int)Aiken_RES_Fields.Foundation_Basement] = BoundaryFields[(int)Aiken_RES_Fields.Foundation_Basement];
+                                        arrColumns[(int)Aiken_RES_Fields.Full_Baths] = BoundaryFields[(int)Aiken_RES_Fields.Full_Baths];
+                                        arrColumns[(int)Aiken_RES_Fields.Garage] = BoundaryFields[(int)Aiken_RES_Fields.Garage];
+                                        arrColumns[(int)Aiken_RES_Fields.Half_Baths] = BoundaryFields[(int)Aiken_RES_Fields.Half_Baths];
+                                        arrColumns[(int)Aiken_RES_Fields.High_School] = BoundaryFields[(int)Aiken_RES_Fields.High_School];
+                                        arrColumns[(int)Aiken_RES_Fields.Interior_Features] = BoundaryFields[(int)Aiken_RES_Fields.Interior_Features];
+                                        arrColumns[(int)Aiken_RES_Fields.LA_ID] = BoundaryFields[(int)Aiken_RES_Fields.LA_ID];
+                                        arrColumns[(int)Aiken_RES_Fields.Latitude] = BoundaryFields[(int)Aiken_RES_Fields.Latitude];
+                                        arrColumns[(int)Aiken_RES_Fields.List_Date] = BoundaryFields[(int)Aiken_RES_Fields.List_Date];
+                                        arrColumns[(int)Aiken_RES_Fields.List_Price] = BoundaryFields[(int)Aiken_RES_Fields.List_Price];
+                                        arrColumns[(int)Aiken_RES_Fields.Listing_Office] = BoundaryFields[(int)Aiken_RES_Fields.Listing_Office];
+                                        arrColumns[(int)Aiken_RES_Fields.Longitude] = BoundaryFields[(int)Aiken_RES_Fields.Longitude];
+                                        arrColumns[(int)Aiken_RES_Fields.Middle_School] = BoundaryFields[(int)Aiken_RES_Fields.Middle_School];
+                                        arrColumns[(int)Aiken_RES_Fields.MLS_Number] = BoundaryFields[(int)Aiken_RES_Fields.MLS_Number];
+                                        arrColumns[(int)Aiken_RES_Fields.New_Construction] = BoundaryFields[(int)Aiken_RES_Fields.New_Construction];
+                                        arrColumns[(int)Aiken_RES_Fields.Photo_Location] = BoundaryFields[(int)Aiken_RES_Fields.Photo_Location];
+                                        arrColumns[(int)Aiken_RES_Fields.Property_Description] = BoundaryFields[(int)Aiken_RES_Fields.Property_Description];
+                                        arrColumns[(int)Aiken_RES_Fields.Property_Status] = BoundaryFields[(int)Aiken_RES_Fields.Property_Status];
+                                        arrColumns[(int)Aiken_RES_Fields.Property_Type] = BoundaryFields[(int)Aiken_RES_Fields.Property_Type];
+                                        arrColumns[(int)Aiken_RES_Fields.State] = BoundaryFields[(int)Aiken_RES_Fields.State];
+                                        arrColumns[(int)Aiken_RES_Fields.Street_Number] = BoundaryFields[(int)Aiken_RES_Fields.Street_Number];
+                                        arrColumns[(int)Aiken_RES_Fields.Style] = BoundaryFields[(int)Aiken_RES_Fields.Style];
+                                        arrColumns[(int)Aiken_RES_Fields.Total_Acres] = BoundaryFields[(int)Aiken_RES_Fields.Total_Acres];
+                                        arrColumns[(int)Aiken_RES_Fields.Town_Subdivision] = BoundaryFields[(int)Aiken_RES_Fields.Town_Subdivision];
+                                        arrColumns[(int)Aiken_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Aiken_RES_Fields.Virtual_Tour];
+                                        arrColumns[(int)Aiken_RES_Fields.Year_Built] = BoundaryFields[(int)Aiken_RES_Fields.Year_Built];
+                                        arrColumns[(int)Aiken_RES_Fields.Zip_Code] = BoundaryFields[(int)Aiken_RES_Fields.Zip_Code];
+                                    }
+                                    else if (intFeedType == FeedType.Land)
+                                    {
+                                        arrColumns[(int)Aiken_RES_Fields.Address] = BoundaryFields[(int)Aiken_LAND_Fields.Address];
+                                        arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] = BoundaryFields[(int)Aiken_LAND_Fields.Apx_Heated_SqFt];
+                                        arrColumns[(int)Aiken_RES_Fields.Total_Acres] = BoundaryFields[(int)Aiken_LAND_Fields.Apx_Total_Acreage];
+                                        arrColumns[(int)Aiken_RES_Fields.City] = BoundaryFields[(int)Aiken_LAND_Fields.City];
+                                        arrColumns[(int)Aiken_RES_Fields.Directions] = BoundaryFields[(int)Aiken_LAND_Fields.Directions];
+                                        arrColumns[(int)Aiken_RES_Fields.Elementary_School] = BoundaryFields[(int)Aiken_LAND_Fields.Elementary_School];
+                                        arrColumns[(int)Aiken_RES_Fields.High_School] = BoundaryFields[(int)Aiken_LAND_Fields.High_School];
+                                        arrColumns[(int)Aiken_RES_Fields.LA_ID] = BoundaryFields[(int)Aiken_LAND_Fields.LA_ID];
+                                        arrColumns[(int)Aiken_RES_Fields.Latitude] = BoundaryFields[(int)Aiken_LAND_Fields.Latitude];
+                                        arrColumns[(int)Aiken_RES_Fields.List_Date] = BoundaryFields[(int)Aiken_LAND_Fields.List_Date];
+                                        arrColumns[(int)Aiken_RES_Fields.List_Price] = BoundaryFields[(int)Aiken_LAND_Fields.List_Price];
+                                        arrColumns[(int)Aiken_RES_Fields.Listing_Office] = BoundaryFields[(int)Aiken_LAND_Fields.Listing_Office];
+                                        arrColumns[(int)Aiken_RES_Fields.Longitude] = BoundaryFields[(int)Aiken_LAND_Fields.Longitude];
+                                        arrColumns[(int)Aiken_RES_Fields.Middle_School] = BoundaryFields[(int)Aiken_LAND_Fields.Middle_School];
+                                        arrColumns[(int)Aiken_RES_Fields.MLS_Number] = BoundaryFields[(int)Aiken_LAND_Fields.MLS_Number];
+                                        arrColumns[(int)Aiken_RES_Fields.New_Construction] = BoundaryFields[(int)Aiken_LAND_Fields.New_Construction];
+                                        arrColumns[(int)Aiken_RES_Fields.Photo_Location] = BoundaryFields[(int)Aiken_LAND_Fields.Photo_Location];
+                                        arrColumns[(int)Aiken_RES_Fields.Property_Status] = BoundaryFields[(int)Aiken_LAND_Fields.Property_Status];
+                                        arrColumns[(int)Aiken_RES_Fields.Property_Type] = BoundaryFields[(int)Aiken_LAND_Fields.Property_Type];
+                                        arrColumns[(int)Aiken_RES_Fields.Property_Description] = BoundaryFields[(int)Aiken_LAND_Fields.Remarks];
+                                        arrColumns[(int)Aiken_RES_Fields.State] = BoundaryFields[(int)Aiken_LAND_Fields.State];
+                                        arrColumns[(int)Aiken_RES_Fields.Street_Number] = BoundaryFields[(int)Aiken_LAND_Fields.Street_Number];
+                                        arrColumns[(int)Aiken_RES_Fields.Town_Subdivision] = BoundaryFields[(int)Aiken_LAND_Fields.Town_Subdivision];
+                                        arrColumns[(int)Aiken_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Aiken_LAND_Fields.Virtual_Tour];
+                                        arrColumns[(int)Aiken_RES_Fields.Zip_Code] = BoundaryFields[(int)Aiken_LAND_Fields.Zip_Code];
+                                    }
+                                    else if (intFeedType == FeedType.Agent)
+                                    {
+                                        arrColumns[(int)Aiken_Agent_Fields.Agent_Email] = BoundaryFields[(int)Aiken_Agent_Fields.Agent_Email];
+                                        arrColumns[(int)Aiken_Agent_Fields.AGENT_ID] = BoundaryFields[(int)Aiken_Agent_Fields.AGENT_ID];
+                                        arrColumns[(int)Aiken_Agent_Fields.Contact_Number] = BoundaryFields[(int)Aiken_Agent_Fields.Contact_Number];
+                                        arrColumns[(int)Aiken_Agent_Fields.First_Name] = BoundaryFields[(int)Aiken_Agent_Fields.First_Name];
+                                        arrColumns[(int)Aiken_Agent_Fields.Home] = BoundaryFields[(int)Aiken_Agent_Fields.Home];
+                                        arrColumns[(int)Aiken_Agent_Fields.Last_Name] = BoundaryFields[(int)Aiken_Agent_Fields.Last_Name];
+                                        arrColumns[(int)Aiken_Agent_Fields.Mail_Address_1] = BoundaryFields[(int)Aiken_Agent_Fields.Mail_Address_1];
+                                        arrColumns[(int)Aiken_Agent_Fields.Mail_City] = BoundaryFields[(int)Aiken_Agent_Fields.Mail_City];
+                                        arrColumns[(int)Aiken_Agent_Fields.Mail_State] = BoundaryFields[(int)Aiken_Agent_Fields.Mail_State];
+                                        arrColumns[(int)Aiken_Agent_Fields.Mail_Zip_Code] = BoundaryFields[(int)Aiken_Agent_Fields.Mail_Zip_Code];
+                                        arrColumns[(int)Aiken_Agent_Fields.Office_ID] = BoundaryFields[(int)Aiken_Agent_Fields.Office_ID];
+                                        arrColumns[(int)Aiken_Agent_Fields.Web_Address] = BoundaryFields[(int)Aiken_Agent_Fields.Web_Address];
+                                    }
+                                    else if (intFeedType == FeedType.Office)
+                                    {
+                                        arrColumns[(int)Office_Fields.Fax] = BoundaryFields[(int)Office_Fields.Fax];
+                                        arrColumns[(int)Office_Fields.Mail_Address_1] = BoundaryFields[(int)Office_Fields.Mail_Address_1];
+                                        arrColumns[(int)Office_Fields.Mail_City] = BoundaryFields[(int)Office_Fields.Mail_City];
+                                        arrColumns[(int)Office_Fields.Mail_State] = BoundaryFields[(int)Office_Fields.Mail_State];
+                                        arrColumns[(int)Office_Fields.Mail_Zip_Code] = BoundaryFields[(int)Office_Fields.Mail_Zip_Code];
+                                        arrColumns[(int)Office_Fields.Main] = BoundaryFields[(int)Office_Fields.Main];
+                                        arrColumns[(int)Office_Fields.Office_ID] = BoundaryFields[(int)Office_Fields.Office_ID];
+                                        arrColumns[(int)Office_Fields.Office_Name] = BoundaryFields[(int)Office_Fields.Office_Name];
+                                        arrColumns[(int)Office_Fields.Web_Address] = BoundaryFields[(int)Office_Fields.Web_Address];
+                                    }
 
-                                        if (arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] == "0")
+
+                                    // Do transformations on RES/LAND Data
+                                    if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential)
+                                    {
+                                        // Fix Title Type Columns
+                                        arrColumns[(int)Aiken_RES_Fields.Address] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Address]);
+                                        arrColumns[(int)Aiken_RES_Fields.Town_Subdivision] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Town_Subdivision]);
+                                        arrColumns[(int)Aiken_RES_Fields.City] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.City]);
+                                        arrColumns[(int)Aiken_RES_Fields.Exterior_Features] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Exterior_Features]);
+                                        arrColumns[(int)Aiken_RES_Fields.Interior_Features] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Interior_Features]);
+                                        arrColumns[(int)Aiken_RES_Fields.Foundation_Basement] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Foundation_Basement]);
+                                        arrColumns[(int)Aiken_RES_Fields.Floors] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Floors]);
+                                        arrColumns[(int)Aiken_RES_Fields.Garage] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Garage]);
+                                        arrColumns[(int)Aiken_RES_Fields.Attic] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Attic]);
+                                        arrColumns[(int)Aiken_RES_Fields.Air_Conditioning] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Air_Conditioning]);
+                                        arrColumns[(int)Aiken_RES_Fields.Elementary_School] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Elementary_School]);
+                                        arrColumns[(int)Aiken_RES_Fields.Middle_School] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Middle_School]);
+                                        arrColumns[(int)Aiken_RES_Fields.High_School] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.High_School]);
+
+                                        // Fix Capitalize Columns
+                                        arrColumns[(int)Aiken_RES_Fields.State] = arrColumns[(int)Aiken_RES_Fields.State].ToUpper();
+
+                                        // Fix Sentence Type Columns
+                                        // arrColumns[(int)Aiken_RES_Fields.Property_Description] = this.FixSentenceCase(arrColumns[(int)Aiken_RES_Fields.Property_Description]);
+
+                                        // Update Agent Id Format.
+                                        arrColumns[(int)Aiken_RES_Fields.LA_ID] = arrColumns[(int)Aiken_RES_Fields.LA_ID].Replace("_", "-");
+
+                                        // Update New Construction
+                                        arrColumns[(int)Aiken_RES_Fields.New_Construction] = (arrColumns[(int)Aiken_RES_Fields.New_Construction] == "1" ? "Y" : "N");
+
+                                        if(intFeedType == FeedType.Land)
                                         {
-                                            arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] = "";
+                                            arrColumns[(int)Aiken_RES_Fields.Property_Type] = "Lots/Land";
+
+                                            if (arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] == "0")
+                                            {
+                                                arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] = "";
+                                            }
+                                        }
+
+                                        // Attempt to get the Geolocation for properties you already have.
+                                        strGeoLocation = this.GetMLSGeolocation(arrColumns[(int)Aiken_RES_Fields.MLS_Number], MLSType.Aiken);
+                                    
+                                        if(strGeoLocation == null && !this.blnGoogleMapsOverLimit)
+                                        {
+                                            strGeoLocation = this.MapAddress(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Street_Number], arrColumns[(int)Aiken_RES_Fields.Address], arrColumns[(int)Aiken_RES_Fields.City], arrColumns[(int)Aiken_RES_Fields.State], arrColumns[(int)Aiken_RES_Fields.Zip_Code], MLSType.Aiken);
+                                        }
+                                    
+
+                                        // Increment the total properties consolidated
+                                        this.intTotalAikenProperties++;
+
+                                        // If GeoLocation is not null, then add it to the columns.
+                                        if(strGeoLocation != null)
+                                        {
+                                            this.intTotalAikenGeocodedProperties++;
+
+                                            arrColumns[(int)Aiken_RES_Fields.Latitude] = strGeoLocation[0];
+                                            arrColumns[(int)Aiken_RES_Fields.Longitude] = strGeoLocation[1];
+                                        }
+
+                                        if (intFeedType == FeedType.Residential)
+                                        {
+                                            this.ExportMySQLData(arrColumns, MLSType.Aiken, intFeedType);
+                                        }
+                                    }
+                                    else if (intFeedType == FeedType.Agent)
+                                    {
+                                        arrColumns[(int)Aiken_Agent_Fields.First_Name] = this.FixTitleCase(arrColumns[(int)Aiken_Agent_Fields.First_Name]);
+                                        arrColumns[(int)Aiken_Agent_Fields.Last_Name] = this.FixTitleCase(arrColumns[(int)Aiken_Agent_Fields.Last_Name]);
+                                        arrColumns[(int)Aiken_Agent_Fields.Mail_Address_1] = this.FixTitleCase(arrColumns[(int)Aiken_Agent_Fields.Mail_Address_1]);
+                                        arrColumns[(int)Aiken_Agent_Fields.Mail_City] = this.FixTitleCase(arrColumns[(int)Aiken_Agent_Fields.Mail_City]);
+
+                                        // Update Agent Id Format.
+                                        arrColumns[(int)Aiken_Agent_Fields.AGENT_ID] = arrColumns[(int)Aiken_Agent_Fields.AGENT_ID].Replace("_", "-");
+
+                                        // Clear out invalid Contact Number
+                                        if (arrColumns[(int)Aiken_Agent_Fields.Contact_Number] == "0")
+                                        {
+                                            arrColumns[(int)Aiken_Agent_Fields.Contact_Number] = "";
+                                        }
+
+                                        if(arrColumns[(int)Aiken_Agent_Fields.Home] == "0")
+                                        {
+                                            arrColumns[(int)Aiken_Agent_Fields.Home] = "";
+                                        }
+
+                                        this.intTotalAikenAgents++;
+
+                                        this.ExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Agent);
+                                    }
+                                    else if (intFeedType == FeedType.Office)
+                                    {
+                                        arrColumns[(int)Office_Fields.Mail_Address_1] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_Address_1]);
+                                        arrColumns[(int)Office_Fields.Mail_City] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_City]);
+                                        arrColumns[(int)Office_Fields.Office_Name] = this.FixTitleCase(arrColumns[(int)Office_Fields.Office_Name]);
+
+                                        this.intTotalAikenOffices++;
+
+                                        this.ExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Office);
+                                    }
+
+                                    bRecordFound = true;
+
+                                    // TODO: Save information in Linux Server
+
+                                    //Add data mls id, photo url to dictionary
+                                    if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential) 
+                                    {
+                                        if (Constant.PHOTO_TEST.ContainsKey(arrColumns[(int)Aiken_RES_Fields.MLS_Number]) && !dictMlsPhotos.ContainsKey(arrColumns[(int)Aiken_RES_Fields.MLS_Number]))
+                                        { 
+                                            dictMlsPhotos.Add(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Photo_Location]);
                                         }
                                     }
 
-                                    // Attempt to get the Geolocation for properties you already have.
-                                    strGeoLocation = this.GetMLSGeolocation(arrColumns[(int)Aiken_RES_Fields.MLS_Number], MLSType.Aiken);
-                                    if(strGeoLocation == null && !this.blnGoogleMapsOverLimit)
+                                    // Write out the columns in sequential order, the columns should have been defined sequentially
+                                    for (int intIndex = 0; intIndex < arrColumns.Length; intIndex++)
                                     {
-                                        strGeoLocation = this.MapAddress(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Street_Number], arrColumns[(int)Aiken_RES_Fields.Address], arrColumns[(int)Aiken_RES_Fields.City], arrColumns[(int)Aiken_RES_Fields.State], arrColumns[(int)Aiken_RES_Fields.Zip_Code], MLSType.Aiken);
-                                    }
-
-                                    // Increment the total properties consolidated
-                                    this.intTotalAikenProperties++;
-
-                                    // If GeoLocation is not null, then add it to the columns.
-                                    if(strGeoLocation != null)
-                                    {
-                                        this.intTotalAikenGeocodedProperties++;
-
-                                        arrColumns[(int)Aiken_RES_Fields.Latitude] = strGeoLocation[0];
-                                        arrColumns[(int)Aiken_RES_Fields.Longitude] = strGeoLocation[1];
-                                    }
-
-                                    if (intFeedType == FeedType.Residential)
-                                    {
-                                        this.RunExportMySQLData(arrColumns, MLSType.Aiken, intFeedType);
-                                    }
-                                }
-                                else if (intFeedType == FeedType.Agent)
-                                {
-                                    arrColumns[(int)Aiken_Agent_Fields.First_Name] = this.FixTitleCase(arrColumns[(int)Aiken_Agent_Fields.First_Name]);
-                                    arrColumns[(int)Aiken_Agent_Fields.Last_Name] = this.FixTitleCase(arrColumns[(int)Aiken_Agent_Fields.Last_Name]);
-                                    arrColumns[(int)Aiken_Agent_Fields.Mail_Address_1] = this.FixTitleCase(arrColumns[(int)Aiken_Agent_Fields.Mail_Address_1]);
-                                    arrColumns[(int)Aiken_Agent_Fields.Mail_City] = this.FixTitleCase(arrColumns[(int)Aiken_Agent_Fields.Mail_City]);
-
-                                    // Update Agent Id Format.
-                                    arrColumns[(int)Aiken_Agent_Fields.AGENT_ID] = arrColumns[(int)Aiken_Agent_Fields.AGENT_ID].Replace("_", "-");
-
-                                    // Clear out invalid Contact Number
-                                    if (arrColumns[(int)Aiken_Agent_Fields.Contact_Number] == "0")
-                                    {
-                                        arrColumns[(int)Aiken_Agent_Fields.Contact_Number] = "";
-                                    }
-
-                                    if(arrColumns[(int)Aiken_Agent_Fields.Home] == "0")
-                                    {
-                                        arrColumns[(int)Aiken_Agent_Fields.Home] = "";
-                                    }
-
-                                    this.intTotalAikenAgents++;
-
-                                    this.RunExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Agent);
-                                }
-                                else if (intFeedType == FeedType.Office)
-                                {
-                                    arrColumns[(int)Office_Fields.Mail_Address_1] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_Address_1]);
-                                    arrColumns[(int)Office_Fields.Mail_City] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_City]);
-                                    arrColumns[(int)Office_Fields.Office_Name] = this.FixTitleCase(arrColumns[(int)Office_Fields.Office_Name]);
-
-                                    this.intTotalAikenOffices++;
-
-                                    this.RunExportMySQLData(arrColumns, MLSType.Aiken, FeedType.Office);
-                                }
-
-                                // TODO: Save information in Linux Server
-
-                                //Add data mls id, photo url to dictionary
-                                if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential) 
-                                {
-                                    if (Constant.PHOTO_TEST.ContainsKey(arrColumns[(int)Aiken_RES_Fields.MLS_Number]) && !dictMlsPhotos.ContainsKey(arrColumns[(int)Aiken_RES_Fields.MLS_Number]))
-                                    { 
-                                        dictMlsPhotos.Add(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Photo_Location]);
-                                    }
-                                }
-
-                                // Write out the columns in sequential order, the columns should have been defined sequentially
-                                for (int intIndex = 0; intIndex < arrColumns.Length; intIndex++)
-                                {
-                                    file.Write("\"" + arrColumns[intIndex] + "\"");
+                                        file.Write("\"" + arrColumns[intIndex] + "\"");
                                     
-                                    if (intIndex < arrColumns.Length - 1)
-                                    {
-                                        file.Write(",");
+                                        if (intIndex < arrColumns.Length - 1)
+                                        {
+                                            file.Write(",");
+                                        }
+                                        else
+                                        {
+                                            file.WriteLine("");
+                                        }
                                     }
-                                    else
-                                    {
-                                        file.WriteLine("");
-                                    }
+
                                 }
+                                catch (Exception ex)
+                                {
+                                    bFatalError = true;
+                                    bBlockPropertyPurge = true;
+                                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running Import Aiken Files. - Details: " + ex.Message + "</i></b>");
+                                }
+
                             }
+                        }
+                    }
+
+                    if (!bRecordFound)
+                    {
+                        this.WriteToLog(String.Format("<br /><b><i style=\"color:red;\">No Records Found in File {0}.</i></b>", arrFilePaths[intFileIndex]));
+
+                        if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential) { 
+                            bBlockPropertyPurge = true;
+                            bFatalError = true;
                         }
                     }
                 }
@@ -1359,6 +1473,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
             string strFeedType;
             bool blnWriteHeader = false;
             bool blnSkipHeader = true;
+            bool bRecordFound = false;
 
             string[] arrColumns = null;
             string[] strGeoLocation;
@@ -1441,6 +1556,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
                 {
                     blnSkipHeader = true;
 
+                    bRecordFound = false;
+
                     using (TextFieldParser parser = new TextFieldParser(arrFilePaths[intFileIndex]))
                     {
                         parser.Delimiters = new string[] { "," };
@@ -1467,310 +1584,333 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                 {
                                     arrColumns[intIndex] = "";
                                 }
-
-                                if (intFeedType == FeedType.Residential)
+                                try 
                                 {
-                                    arrColumns[(int)Augusta_RES_Fields.AC_Ventilation] = BoundaryFields[(int)Augusta_RES_Fields.AC_Ventilation];
-                                    arrColumns[(int)Augusta_RES_Fields.Address] = BoundaryFields[(int)Augusta_RES_Fields.Address];
-                                    arrColumns[(int)Augusta_RES_Fields.Appliances] = BoundaryFields[(int)Augusta_RES_Fields.Appliances];
-                                    arrColumns[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt] = BoundaryFields[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt];
-                                    arrColumns[(int)Augusta_RES_Fields.Apx_Year_Built] = BoundaryFields[(int)Augusta_RES_Fields.Apx_Year_Built];
-                                    arrColumns[(int)Augusta_RES_Fields.Attic] = BoundaryFields[(int)Augusta_RES_Fields.Attic];
-                                    arrColumns[(int)Augusta_RES_Fields.Basement] = BoundaryFields[(int)Augusta_RES_Fields.Basement];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Length] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_2_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Level] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_2_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Width] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_2_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Length] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_3_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Level] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_3_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Width] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_3_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Length] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_4_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Level] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_4_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Width] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_4_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Length] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_5_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Level] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_5_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Width] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_5_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedrooms] = BoundaryFields[(int)Augusta_RES_Fields.Bedrooms];
-                                    arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Length] = BoundaryFields[(int)Augusta_RES_Fields.Breakfast_Rm_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Level] = BoundaryFields[(int)Augusta_RES_Fields.Breakfast_Rm_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Width] = BoundaryFields[(int)Augusta_RES_Fields.Breakfast_Rm_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.Builder_Name] = BoundaryFields[(int)Augusta_RES_Fields.Builder_Name];
-                                    arrColumns[(int)Augusta_RES_Fields.City] = BoundaryFields[(int)Augusta_RES_Fields.City];
-                                    arrColumns[(int)Augusta_RES_Fields.County] = BoundaryFields[(int)Augusta_RES_Fields.County];
-                                    arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Length] = BoundaryFields[(int)Augusta_RES_Fields.Dining_Rm_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Level] = BoundaryFields[(int)Augusta_RES_Fields.Dining_Rm_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Width] = BoundaryFields[(int)Augusta_RES_Fields.Dining_Rm_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.Directions] = BoundaryFields[(int)Augusta_RES_Fields.Directions];
-                                    arrColumns[(int)Augusta_RES_Fields.Driveway] = BoundaryFields[(int)Augusta_RES_Fields.Driveway];
-                                    arrColumns[(int)Augusta_RES_Fields.Elementary_School] = BoundaryFields[(int)Augusta_RES_Fields.Elementary_School];
-                                    arrColumns[(int)Augusta_RES_Fields.Exterior_Features] = BoundaryFields[(int)Augusta_RES_Fields.Exterior_Features];
-                                    arrColumns[(int)Augusta_RES_Fields.Exterior_Finish] = BoundaryFields[(int)Augusta_RES_Fields.Exterior_Finish];
-                                    arrColumns[(int)Augusta_RES_Fields.Extra_Rooms] = BoundaryFields[(int)Augusta_RES_Fields.Extra_Rooms];
-                                    arrColumns[(int)Augusta_RES_Fields.Family_Rm_Length] = BoundaryFields[(int)Augusta_RES_Fields.Family_Rm_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Family_Rm_Level] = BoundaryFields[(int)Augusta_RES_Fields.Family_Rm_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Family_Rm_Width] = BoundaryFields[(int)Augusta_RES_Fields.Family_Rm_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.Financing_Type] = BoundaryFields[(int)Augusta_RES_Fields.Financing_Type];
-                                    arrColumns[(int)Augusta_RES_Fields.Flooring] = BoundaryFields[(int)Augusta_RES_Fields.Flooring];
-                                    arrColumns[(int)Augusta_RES_Fields.Foundation_Basement] = BoundaryFields[(int)Augusta_RES_Fields.Foundation_Basement];
-                                    arrColumns[(int)Augusta_RES_Fields.Fuel_Source] = BoundaryFields[(int)Augusta_RES_Fields.Fuel_Source];
-                                    arrColumns[(int)Augusta_RES_Fields.Full_Baths] = BoundaryFields[(int)Augusta_RES_Fields.Full_Baths];
-                                    arrColumns[(int)Augusta_RES_Fields.Garage_Carport] = BoundaryFields[(int)Augusta_RES_Fields.Garage_Carport];
-                                    arrColumns[(int)Augusta_RES_Fields.Great_Rm_Length] = BoundaryFields[(int)Augusta_RES_Fields.Great_Rm_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Great_Rm_Level] = BoundaryFields[(int)Augusta_RES_Fields.Great_Rm_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Great_Rm_Width] = BoundaryFields[(int)Augusta_RES_Fields.Great_Rm_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.Half_Baths] = BoundaryFields[(int)Augusta_RES_Fields.Half_Baths];
-                                    arrColumns[(int)Augusta_RES_Fields.Heat_Delivery] = BoundaryFields[(int)Augusta_RES_Fields.Heat_Delivery];
-                                    arrColumns[(int)Augusta_RES_Fields.High_School] = BoundaryFields[(int)Augusta_RES_Fields.High_School];
-                                    arrColumns[(int)Augusta_RES_Fields.Interior_Features] = BoundaryFields[(int)Augusta_RES_Fields.Interior_Features];
-                                    arrColumns[(int)Augusta_RES_Fields.Kitchen_Length] = BoundaryFields[(int)Augusta_RES_Fields.Kitchen_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Kitchen_Level] = BoundaryFields[(int)Augusta_RES_Fields.Kitchen_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Kitchen_Width] = BoundaryFields[(int)Augusta_RES_Fields.Kitchen_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.LA_ID] = BoundaryFields[(int)Augusta_RES_Fields.LA_ID];
-                                    arrColumns[(int)Augusta_RES_Fields.Latitude] = BoundaryFields[(int)Augusta_RES_Fields.Latitude];
-                                    arrColumns[(int)Augusta_RES_Fields.List_Price] = BoundaryFields[(int)Augusta_RES_Fields.List_Price];
-                                    arrColumns[(int)Augusta_RES_Fields.Listing_Office] = BoundaryFields[(int)Augusta_RES_Fields.Listing_Office];
-                                    arrColumns[(int)Augusta_RES_Fields.Living_Rm_Length] = BoundaryFields[(int)Augusta_RES_Fields.Living_Rm_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Living_Rm_Level] = BoundaryFields[(int)Augusta_RES_Fields.Living_Rm_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Living_Rm_Width] = BoundaryFields[(int)Augusta_RES_Fields.Living_Rm_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.Longitude] = BoundaryFields[(int)Augusta_RES_Fields.Longitude];
-                                    arrColumns[(int)Augusta_RES_Fields.Lot_Description] = BoundaryFields[(int)Augusta_RES_Fields.Lot_Description];
-                                    arrColumns[(int)Augusta_RES_Fields.Lot_Size] = BoundaryFields[(int)Augusta_RES_Fields.Lot_Size];
-                                    arrColumns[(int)Augusta_RES_Fields.Middle_School] = BoundaryFields[(int)Augusta_RES_Fields.Middle_School];
-                                    arrColumns[(int)Augusta_RES_Fields.MLS_Number] = BoundaryFields[(int)Augusta_RES_Fields.MLS_Number];
-                                    arrColumns[(int)Augusta_RES_Fields.Neighborhood_Amenities] = BoundaryFields[(int)Augusta_RES_Fields.Neighborhood_Amenities];
-                                    arrColumns[(int)Augusta_RES_Fields.New_Construction] = BoundaryFields[(int)Augusta_RES_Fields.New_Construction];
-                                    arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces] = BoundaryFields[(int)Augusta_RES_Fields.Number_Fireplaces];
-                                    arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Length] = BoundaryFields[(int)Augusta_RES_Fields.Owner_Bedroom_Length];
-                                    arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Level] = BoundaryFields[(int)Augusta_RES_Fields.Owner_Bedroom_Level];
-                                    arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Width] = BoundaryFields[(int)Augusta_RES_Fields.Owner_Bedroom_Width];
-                                    arrColumns[(int)Augusta_RES_Fields.Photo_Count] = BoundaryFields[(int)Augusta_RES_Fields.Photo_Count];
-                                    arrColumns[(int)Augusta_RES_Fields.Photo_location] = BoundaryFields[(int)Augusta_RES_Fields.Photo_location];
-                                    arrColumns[(int)Augusta_RES_Fields.Pool] = BoundaryFields[(int)Augusta_RES_Fields.Pool];
-                                    arrColumns[(int)Augusta_RES_Fields.Property_Description] = BoundaryFields[(int)Augusta_RES_Fields.Property_Description];
-                                    arrColumns[(int)Augusta_RES_Fields.Property_Status] = BoundaryFields[(int)Augusta_RES_Fields.Property_Status];
-                                    arrColumns[(int)Augusta_RES_Fields.Property_Type] = BoundaryFields[(int)Augusta_RES_Fields.Property_Type];
-                                    arrColumns[(int)Augusta_RES_Fields.Roof] = BoundaryFields[(int)Augusta_RES_Fields.Roof];
-                                    arrColumns[(int)Augusta_RES_Fields.Sewer] = BoundaryFields[(int)Augusta_RES_Fields.Sewer];
-                                    arrColumns[(int)Augusta_RES_Fields.Showing_Instructions] = BoundaryFields[(int)Augusta_RES_Fields.Showing_Instructions];
-                                    arrColumns[(int)Augusta_RES_Fields.State] = BoundaryFields[(int)Augusta_RES_Fields.State];
-                                    arrColumns[(int)Augusta_RES_Fields.Street_Number] = BoundaryFields[(int)Augusta_RES_Fields.Street_Number];
-                                    arrColumns[(int)Augusta_RES_Fields.Style] = BoundaryFields[(int)Augusta_RES_Fields.Style];
-                                    arrColumns[(int)Augusta_RES_Fields.Subdivision] = BoundaryFields[(int)Augusta_RES_Fields.Subdivision];
-                                    arrColumns[(int)Augusta_RES_Fields.Total_Acres] = BoundaryFields[(int)Augusta_RES_Fields.Total_Acres];
-                                    arrColumns[(int)Augusta_RES_Fields.Total_Number_Rooms] = BoundaryFields[(int)Augusta_RES_Fields.Total_Number_Rooms];
-                                    arrColumns[(int)Augusta_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Augusta_RES_Fields.Virtual_Tour];
-                                    arrColumns[(int)Augusta_RES_Fields.Water] = BoundaryFields[(int)Augusta_RES_Fields.Water];
-                                    arrColumns[(int)Augusta_RES_Fields.Zip_Code] = BoundaryFields[(int)Augusta_RES_Fields.Zip_Code];
-                                }
-                                else if (intFeedType == FeedType.Land)
-                                {
-                                    arrColumns[(int)Augusta_RES_Fields.Address] = BoundaryFields[(int)Augusta_LAND_Fields.Address];
-                                    arrColumns[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt] = BoundaryFields[(int)Augusta_LAND_Fields.Apx_Total_Heated_SqFt];
-                                    arrColumns[(int)Augusta_RES_Fields.Bedrooms] = BoundaryFields[(int)Augusta_LAND_Fields.Bedrooms];
-                                    arrColumns[(int)Augusta_RES_Fields.Builder_Name] = BoundaryFields[(int)Augusta_LAND_Fields.Builder_Name];
-                                    arrColumns[(int)Augusta_RES_Fields.City] = BoundaryFields[(int)Augusta_LAND_Fields.City];
-                                    arrColumns[(int)Augusta_RES_Fields.County] = BoundaryFields[(int)Augusta_LAND_Fields.County];
-                                    arrColumns[(int)Augusta_RES_Fields.Directions] = BoundaryFields[(int)Augusta_LAND_Fields.Directions];
-                                    arrColumns[(int)Augusta_RES_Fields.Elementary_School] = BoundaryFields[(int)Augusta_LAND_Fields.Elementary_School];
-                                    arrColumns[(int)Augusta_RES_Fields.Exterior_Finish] = BoundaryFields[(int)Augusta_LAND_Fields.Exterior_Finish]; 
-                                    arrColumns[(int)Augusta_RES_Fields.Financing_Type] = BoundaryFields[(int)Augusta_LAND_Fields.Financing_Type];
-                                    arrColumns[(int)Augusta_RES_Fields.Full_Baths] = BoundaryFields[(int)Augusta_LAND_Fields.Full_Baths];
-                                    arrColumns[(int)Augusta_RES_Fields.Half_Baths] = BoundaryFields[(int)Augusta_LAND_Fields.Half_Baths];
-                                    arrColumns[(int)Augusta_RES_Fields.High_School] = BoundaryFields[(int)Augusta_LAND_Fields.High_School];
-                                    arrColumns[(int)Augusta_RES_Fields.Interior_Features] = BoundaryFields[(int)Augusta_LAND_Fields.Interior_Features];
-                                    arrColumns[(int)Augusta_RES_Fields.Latitude] = BoundaryFields[(int)Augusta_LAND_Fields.Latitude];
-                                    arrColumns[(int)Augusta_RES_Fields.Longitude] = BoundaryFields[(int)Augusta_LAND_Fields.Longitude];
-                                    arrColumns[(int)Augusta_RES_Fields.List_Price] = BoundaryFields[(int)Augusta_LAND_Fields.List_Price];
-                                    arrColumns[(int)Augusta_RES_Fields.Listing_Office] = BoundaryFields[(int)Augusta_LAND_Fields.Listing_Office];
-                                    arrColumns[(int)Augusta_RES_Fields.Lot_Description] = BoundaryFields[(int)Augusta_LAND_Fields.Lot_Description];
-                                    arrColumns[(int)Augusta_RES_Fields.Lot_Size] = BoundaryFields[(int)Augusta_LAND_Fields.Lot_Size];
-                                    arrColumns[(int)Augusta_RES_Fields.Middle_School] = BoundaryFields[(int)Augusta_LAND_Fields.Middle_School];
-                                    arrColumns[(int)Augusta_RES_Fields.MLS_Number] = BoundaryFields[(int)Augusta_LAND_Fields.MLS_Number];
-                                    arrColumns[(int)Augusta_RES_Fields.Neighborhood_Amenities] = BoundaryFields[(int)Augusta_LAND_Fields.Neighborhood_Amenities];
-                                    arrColumns[(int)Augusta_RES_Fields.New_Construction] = BoundaryFields[(int)Augusta_LAND_Fields.New_Construction];
-                                    arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces] = BoundaryFields[(int)Augusta_LAND_Fields.Number_Fireplaces];
-                                    arrColumns[(int)Augusta_RES_Fields.Photo_Count] = BoundaryFields[(int)Augusta_LAND_Fields.Photo_Count];
-                                    arrColumns[(int)Augusta_RES_Fields.Photo_location] = BoundaryFields[(int)Augusta_LAND_Fields.Photo_location];
-                                    arrColumns[(int)Augusta_RES_Fields.Pool] = BoundaryFields[(int)Augusta_LAND_Fields.Pool];
-                                    arrColumns[(int)Augusta_RES_Fields.Property_Description] = BoundaryFields[(int)Augusta_LAND_Fields.Property_Description];
-                                    arrColumns[(int)Augusta_RES_Fields.Property_Status] = BoundaryFields[(int)Augusta_LAND_Fields.Property_Status];
-                                    arrColumns[(int)Augusta_RES_Fields.Property_Type] = BoundaryFields[(int)Augusta_LAND_Fields.Property_Type];
-                                    arrColumns[(int)Augusta_RES_Fields.Showing_Instructions] = BoundaryFields[(int)Augusta_LAND_Fields.Showing_Instructions];
-                                    arrColumns[(int)Augusta_RES_Fields.State] = BoundaryFields[(int)Augusta_LAND_Fields.State];
-                                    arrColumns[(int)Augusta_RES_Fields.Street_Number] = BoundaryFields[(int)Augusta_LAND_Fields.Street_Number];
-                                    arrColumns[(int)Augusta_RES_Fields.Style] = BoundaryFields[(int)Augusta_LAND_Fields.Style];
-                                    arrColumns[(int)Augusta_RES_Fields.Subdivision] = BoundaryFields[(int)Augusta_LAND_Fields.Subdivision];
-                                    arrColumns[(int)Augusta_RES_Fields.Total_Acres] = BoundaryFields[(int)Augusta_LAND_Fields.Total_Acres];
-                                    arrColumns[(int)Augusta_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Augusta_LAND_Fields.Virtual_Tour];
-                                    arrColumns[(int)Augusta_RES_Fields.Zip_Code] = BoundaryFields[(int)Augusta_LAND_Fields.Zip_Code];
-                                }
-                                else if (intFeedType == FeedType.Agent)
-                                {
-                                    arrColumns[(int)Augusta_Agent_Fields.Agent_Email] = BoundaryFields[(int)Augusta_Agent_Fields.Agent_Email];
-                                    arrColumns[(int)Augusta_Agent_Fields.AGENT_ID] = BoundaryFields[(int)Augusta_Agent_Fields.AGENT_ID];
-                                    arrColumns[(int)Augusta_Agent_Fields.Contact_Number] = BoundaryFields[(int)Augusta_Agent_Fields.Contact_Number];
-                                    arrColumns[(int)Augusta_Agent_Fields.First_Name] = BoundaryFields[(int)Augusta_Agent_Fields.First_Name];
-                                    arrColumns[(int)Augusta_Agent_Fields.Home] = BoundaryFields[(int)Augusta_Agent_Fields.Home];
-                                    arrColumns[(int)Augusta_Agent_Fields.Last_Name] = BoundaryFields[(int)Augusta_Agent_Fields.Last_Name];
-                                    arrColumns[(int)Augusta_Agent_Fields.Mail_Address_1] = BoundaryFields[(int)Augusta_Agent_Fields.Mail_Address_1];
-                                    arrColumns[(int)Augusta_Agent_Fields.Mail_City] = BoundaryFields[(int)Augusta_Agent_Fields.Mail_City];
-                                    arrColumns[(int)Augusta_Agent_Fields.Mail_State] = BoundaryFields[(int)Augusta_Agent_Fields.Mail_State];
-                                    arrColumns[(int)Augusta_Agent_Fields.Mail_Zip_Code] = BoundaryFields[(int)Augusta_Agent_Fields.Mail_Zip_Code];
-                                    arrColumns[(int)Augusta_Agent_Fields.Office_ID] = BoundaryFields[(int)Augusta_Agent_Fields.Office_ID];
-                                    arrColumns[(int)Augusta_Agent_Fields.Web_Address] = BoundaryFields[(int)Augusta_Agent_Fields.Web_Address];
-                                }
-                                else if (intFeedType == FeedType.Office)
-                                {
-                                    arrColumns[(int)Office_Fields.Fax] = BoundaryFields[(int)Office_Fields.Fax];
-                                    arrColumns[(int)Office_Fields.Mail_Address_1] = BoundaryFields[(int)Office_Fields.Mail_Address_1];
-                                    arrColumns[(int)Office_Fields.Mail_City] = BoundaryFields[(int)Office_Fields.Mail_City];
-                                    arrColumns[(int)Office_Fields.Mail_State] = BoundaryFields[(int)Office_Fields.Mail_State];
-                                    arrColumns[(int)Office_Fields.Mail_Zip_Code] = BoundaryFields[(int)Office_Fields.Mail_Zip_Code];
-                                    arrColumns[(int)Office_Fields.Main] = BoundaryFields[(int)Office_Fields.Main];
-                                    arrColumns[(int)Office_Fields.Office_ID] = BoundaryFields[(int)Office_Fields.Office_ID];
-                                    arrColumns[(int)Office_Fields.Office_Name] = BoundaryFields[(int)Office_Fields.Office_Name];
-                                    arrColumns[(int)Office_Fields.Web_Address] = BoundaryFields[(int)Office_Fields.Web_Address];
-                                }
-
-                                // Do transformations on RES/LAND Data
-                                if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential)
-                                {
-                                    arrColumns[(int)Augusta_RES_Fields.Address] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.Address]);
-                                    arrColumns[(int)Augusta_RES_Fields.City] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.City]);
-                                    arrColumns[(int)Augusta_RES_Fields.Subdivision] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.Subdivision]);
-                                    arrColumns[(int)Augusta_RES_Fields.Elementary_School] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.Elementary_School]);
-                                    arrColumns[(int)Augusta_RES_Fields.Middle_School] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.Middle_School]);
-                                    arrColumns[(int)Augusta_RES_Fields.High_School] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.High_School]);
-                                    arrColumns[(int)Augusta_RES_Fields.County] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.County]);
-
-                                    // Fix Capitalize Columns
-                                    arrColumns[(int)Augusta_RES_Fields.State] = arrColumns[(int)Augusta_RES_Fields.State].ToUpper();
-
-                                    // Fix Sentence Type Columns
-                                    arrColumns[(int)Augusta_RES_Fields.Property_Description] = this.FixSentenceCase(arrColumns[(int)Augusta_RES_Fields.Property_Description]);
-
-                                    // Update Agent Id Format.
-                                    arrColumns[(int)Augusta_RES_Fields.LA_ID] = arrColumns[(int)Augusta_RES_Fields.LA_ID].Replace("_", "-");
-
-                                    // Update New Construction
-                                    arrColumns[(int)Augusta_RES_Fields.New_Construction] = (arrColumns[(int)Augusta_RES_Fields.New_Construction] == "1" ? "Y" : "N");
-                                    arrColumns[(int)Augusta_RES_Fields.Pool] = (arrColumns[(int)Augusta_RES_Fields.Pool] == "1" ? "Y" : "N");
-
-                                    if(intFeedType == FeedType.Land)
-                                    {
-                                        if (arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces] == "0")
-                                        {
-                                            arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces] = "";
-                                        }
-
-                                        if (arrColumns[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt] == "0")
-                                        {
-                                            arrColumns[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt] = "";
-                                        }
-
-                                        if (arrColumns[(int)Augusta_RES_Fields.Bedrooms] == "0")
-                                        {
-                                            arrColumns[(int)Augusta_RES_Fields.Bedrooms] = "";
-                                        }
-
-                                        if (arrColumns[(int)Augusta_RES_Fields.Half_Baths] == "0")
-                                        {
-                                            arrColumns[(int)Augusta_RES_Fields.Half_Baths] = "";
-                                        }
-
-                                        if (arrColumns[(int)Augusta_RES_Fields.Full_Baths] == "0")
-                                        {
-                                            arrColumns[(int)Augusta_RES_Fields.Full_Baths] = "";
-                                        }
-
-                                        arrColumns[(int)Augusta_RES_Fields.Property_Type] = "Lots/Land";
-                                    }
-
-                                    // Attempt to get the Geolocation for properties you already have.
-                                    strGeoLocation = this.GetMLSGeolocation(arrColumns[(int)Augusta_RES_Fields.MLS_Number], MLSType.Augusta);
-                                    if(strGeoLocation == null && !this.blnGoogleMapsOverLimit)
-                                    {
-                                        strGeoLocation = this.MapAddress(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Street_Number], arrColumns[(int)Augusta_RES_Fields.Address], arrColumns[(int)Augusta_RES_Fields.City], arrColumns[(int)Augusta_RES_Fields.State], arrColumns[(int)Augusta_RES_Fields.Zip_Code], MLSType.Augusta);
-                                    }
-
-                                    // Increment the total properties consolidated
-                                    this.intTotalAugustaProperties++;
-
-                                    // If GeoLocation is not null, then add it to the columns.
-                                    if(strGeoLocation != null)
-                                    {
-                                        this.intTotalAugustaGeocodedProperties++;
-
-                                        arrColumns[(int)Augusta_RES_Fields.Latitude] = strGeoLocation[0];
-                                        arrColumns[(int)Augusta_RES_Fields.Longitude] = strGeoLocation[1];
-                                    }
-
                                     if (intFeedType == FeedType.Residential)
                                     {
-                                        this.RunExportMySQLData(arrColumns, MLSType.Augusta, intFeedType);
+                                        arrColumns[(int)Augusta_RES_Fields.AC_Ventilation] = BoundaryFields[(int)Augusta_RES_Fields.AC_Ventilation];
+                                        arrColumns[(int)Augusta_RES_Fields.Address] = BoundaryFields[(int)Augusta_RES_Fields.Address];
+                                        arrColumns[(int)Augusta_RES_Fields.Appliances] = BoundaryFields[(int)Augusta_RES_Fields.Appliances];
+                                        arrColumns[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt] = BoundaryFields[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt];
+                                        arrColumns[(int)Augusta_RES_Fields.Apx_Year_Built] = BoundaryFields[(int)Augusta_RES_Fields.Apx_Year_Built];
+                                        arrColumns[(int)Augusta_RES_Fields.Attic] = BoundaryFields[(int)Augusta_RES_Fields.Attic];
+                                        arrColumns[(int)Augusta_RES_Fields.Basement] = BoundaryFields[(int)Augusta_RES_Fields.Basement];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Length] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_2_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Level] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_2_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_2_Width] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_2_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Length] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_3_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Level] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_3_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_3_Width] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_3_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Length] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_4_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Level] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_4_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_4_Width] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_4_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Length] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_5_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Level] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_5_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedroom_5_Width] = BoundaryFields[(int)Augusta_RES_Fields.Bedroom_5_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedrooms] = BoundaryFields[(int)Augusta_RES_Fields.Bedrooms];
+                                        arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Length] = BoundaryFields[(int)Augusta_RES_Fields.Breakfast_Rm_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Level] = BoundaryFields[(int)Augusta_RES_Fields.Breakfast_Rm_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Breakfast_Rm_Width] = BoundaryFields[(int)Augusta_RES_Fields.Breakfast_Rm_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.Builder_Name] = BoundaryFields[(int)Augusta_RES_Fields.Builder_Name];
+                                        arrColumns[(int)Augusta_RES_Fields.City] = BoundaryFields[(int)Augusta_RES_Fields.City];
+                                        arrColumns[(int)Augusta_RES_Fields.County] = BoundaryFields[(int)Augusta_RES_Fields.County];
+                                        arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Length] = BoundaryFields[(int)Augusta_RES_Fields.Dining_Rm_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Level] = BoundaryFields[(int)Augusta_RES_Fields.Dining_Rm_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Dining_Rm_Width] = BoundaryFields[(int)Augusta_RES_Fields.Dining_Rm_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.Directions] = BoundaryFields[(int)Augusta_RES_Fields.Directions];
+                                        arrColumns[(int)Augusta_RES_Fields.Driveway] = BoundaryFields[(int)Augusta_RES_Fields.Driveway];
+                                        arrColumns[(int)Augusta_RES_Fields.Elementary_School] = BoundaryFields[(int)Augusta_RES_Fields.Elementary_School];
+                                        arrColumns[(int)Augusta_RES_Fields.Exterior_Features] = BoundaryFields[(int)Augusta_RES_Fields.Exterior_Features];
+                                        arrColumns[(int)Augusta_RES_Fields.Exterior_Finish] = BoundaryFields[(int)Augusta_RES_Fields.Exterior_Finish];
+                                        arrColumns[(int)Augusta_RES_Fields.Extra_Rooms] = BoundaryFields[(int)Augusta_RES_Fields.Extra_Rooms];
+                                        arrColumns[(int)Augusta_RES_Fields.Family_Rm_Length] = BoundaryFields[(int)Augusta_RES_Fields.Family_Rm_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Family_Rm_Level] = BoundaryFields[(int)Augusta_RES_Fields.Family_Rm_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Family_Rm_Width] = BoundaryFields[(int)Augusta_RES_Fields.Family_Rm_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.Financing_Type] = BoundaryFields[(int)Augusta_RES_Fields.Financing_Type];
+                                        arrColumns[(int)Augusta_RES_Fields.Flooring] = BoundaryFields[(int)Augusta_RES_Fields.Flooring];
+                                        arrColumns[(int)Augusta_RES_Fields.Foundation_Basement] = BoundaryFields[(int)Augusta_RES_Fields.Foundation_Basement];
+                                        arrColumns[(int)Augusta_RES_Fields.Fuel_Source] = BoundaryFields[(int)Augusta_RES_Fields.Fuel_Source];
+                                        arrColumns[(int)Augusta_RES_Fields.Full_Baths] = BoundaryFields[(int)Augusta_RES_Fields.Full_Baths];
+                                        arrColumns[(int)Augusta_RES_Fields.Garage_Carport] = BoundaryFields[(int)Augusta_RES_Fields.Garage_Carport];
+                                        arrColumns[(int)Augusta_RES_Fields.Great_Rm_Length] = BoundaryFields[(int)Augusta_RES_Fields.Great_Rm_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Great_Rm_Level] = BoundaryFields[(int)Augusta_RES_Fields.Great_Rm_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Great_Rm_Width] = BoundaryFields[(int)Augusta_RES_Fields.Great_Rm_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.Half_Baths] = BoundaryFields[(int)Augusta_RES_Fields.Half_Baths];
+                                        arrColumns[(int)Augusta_RES_Fields.Heat_Delivery] = BoundaryFields[(int)Augusta_RES_Fields.Heat_Delivery];
+                                        arrColumns[(int)Augusta_RES_Fields.High_School] = BoundaryFields[(int)Augusta_RES_Fields.High_School];
+                                        arrColumns[(int)Augusta_RES_Fields.Interior_Features] = BoundaryFields[(int)Augusta_RES_Fields.Interior_Features];
+                                        arrColumns[(int)Augusta_RES_Fields.Kitchen_Length] = BoundaryFields[(int)Augusta_RES_Fields.Kitchen_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Kitchen_Level] = BoundaryFields[(int)Augusta_RES_Fields.Kitchen_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Kitchen_Width] = BoundaryFields[(int)Augusta_RES_Fields.Kitchen_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.LA_ID] = BoundaryFields[(int)Augusta_RES_Fields.LA_ID];
+                                        arrColumns[(int)Augusta_RES_Fields.Latitude] = BoundaryFields[(int)Augusta_RES_Fields.Latitude];
+                                        arrColumns[(int)Augusta_RES_Fields.List_Price] = BoundaryFields[(int)Augusta_RES_Fields.List_Price];
+                                        arrColumns[(int)Augusta_RES_Fields.Listing_Office] = BoundaryFields[(int)Augusta_RES_Fields.Listing_Office];
+                                        arrColumns[(int)Augusta_RES_Fields.Living_Rm_Length] = BoundaryFields[(int)Augusta_RES_Fields.Living_Rm_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Living_Rm_Level] = BoundaryFields[(int)Augusta_RES_Fields.Living_Rm_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Living_Rm_Width] = BoundaryFields[(int)Augusta_RES_Fields.Living_Rm_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.Longitude] = BoundaryFields[(int)Augusta_RES_Fields.Longitude];
+                                        arrColumns[(int)Augusta_RES_Fields.Lot_Description] = BoundaryFields[(int)Augusta_RES_Fields.Lot_Description];
+                                        arrColumns[(int)Augusta_RES_Fields.Lot_Size] = BoundaryFields[(int)Augusta_RES_Fields.Lot_Size];
+                                        arrColumns[(int)Augusta_RES_Fields.Middle_School] = BoundaryFields[(int)Augusta_RES_Fields.Middle_School];
+                                        arrColumns[(int)Augusta_RES_Fields.MLS_Number] = BoundaryFields[(int)Augusta_RES_Fields.MLS_Number];
+                                        arrColumns[(int)Augusta_RES_Fields.Neighborhood_Amenities] = BoundaryFields[(int)Augusta_RES_Fields.Neighborhood_Amenities];
+                                        arrColumns[(int)Augusta_RES_Fields.New_Construction] = BoundaryFields[(int)Augusta_RES_Fields.New_Construction];
+                                        arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces] = BoundaryFields[(int)Augusta_RES_Fields.Number_Fireplaces];
+                                        arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Length] = BoundaryFields[(int)Augusta_RES_Fields.Owner_Bedroom_Length];
+                                        arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Level] = BoundaryFields[(int)Augusta_RES_Fields.Owner_Bedroom_Level];
+                                        arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Width] = BoundaryFields[(int)Augusta_RES_Fields.Owner_Bedroom_Width];
+                                        arrColumns[(int)Augusta_RES_Fields.Photo_Count] = BoundaryFields[(int)Augusta_RES_Fields.Photo_Count];
+                                        arrColumns[(int)Augusta_RES_Fields.Photo_location] = BoundaryFields[(int)Augusta_RES_Fields.Photo_location];
+                                        arrColumns[(int)Augusta_RES_Fields.Pool] = BoundaryFields[(int)Augusta_RES_Fields.Pool];
+                                        arrColumns[(int)Augusta_RES_Fields.Property_Description] = BoundaryFields[(int)Augusta_RES_Fields.Property_Description];
+                                        arrColumns[(int)Augusta_RES_Fields.Property_Status] = BoundaryFields[(int)Augusta_RES_Fields.Property_Status];
+                                        arrColumns[(int)Augusta_RES_Fields.Property_Type] = BoundaryFields[(int)Augusta_RES_Fields.Property_Type];
+                                        arrColumns[(int)Augusta_RES_Fields.Roof] = BoundaryFields[(int)Augusta_RES_Fields.Roof];
+                                        arrColumns[(int)Augusta_RES_Fields.Sewer] = BoundaryFields[(int)Augusta_RES_Fields.Sewer];
+                                        arrColumns[(int)Augusta_RES_Fields.Showing_Instructions] = BoundaryFields[(int)Augusta_RES_Fields.Showing_Instructions];
+                                        arrColumns[(int)Augusta_RES_Fields.State] = BoundaryFields[(int)Augusta_RES_Fields.State];
+                                        arrColumns[(int)Augusta_RES_Fields.Street_Number] = BoundaryFields[(int)Augusta_RES_Fields.Street_Number];
+                                        arrColumns[(int)Augusta_RES_Fields.Style] = BoundaryFields[(int)Augusta_RES_Fields.Style];
+                                        arrColumns[(int)Augusta_RES_Fields.Subdivision] = BoundaryFields[(int)Augusta_RES_Fields.Subdivision];
+                                        arrColumns[(int)Augusta_RES_Fields.Total_Acres] = BoundaryFields[(int)Augusta_RES_Fields.Total_Acres];
+                                        arrColumns[(int)Augusta_RES_Fields.Total_Number_Rooms] = BoundaryFields[(int)Augusta_RES_Fields.Total_Number_Rooms];
+                                        arrColumns[(int)Augusta_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Augusta_RES_Fields.Virtual_Tour];
+                                        arrColumns[(int)Augusta_RES_Fields.Water] = BoundaryFields[(int)Augusta_RES_Fields.Water];
+                                        arrColumns[(int)Augusta_RES_Fields.Zip_Code] = BoundaryFields[(int)Augusta_RES_Fields.Zip_Code];
+                                    }
+                                    else if (intFeedType == FeedType.Land)
+                                    {
+                                        arrColumns[(int)Augusta_RES_Fields.Address] = BoundaryFields[(int)Augusta_LAND_Fields.Address];
+                                        arrColumns[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt] = BoundaryFields[(int)Augusta_LAND_Fields.Apx_Total_Heated_SqFt];
+                                        arrColumns[(int)Augusta_RES_Fields.Bedrooms] = BoundaryFields[(int)Augusta_LAND_Fields.Bedrooms];
+                                        arrColumns[(int)Augusta_RES_Fields.Builder_Name] = BoundaryFields[(int)Augusta_LAND_Fields.Builder_Name];
+                                        arrColumns[(int)Augusta_RES_Fields.City] = BoundaryFields[(int)Augusta_LAND_Fields.City];
+                                        arrColumns[(int)Augusta_RES_Fields.County] = BoundaryFields[(int)Augusta_LAND_Fields.County];
+                                        arrColumns[(int)Augusta_RES_Fields.Directions] = BoundaryFields[(int)Augusta_LAND_Fields.Directions];
+                                        arrColumns[(int)Augusta_RES_Fields.Elementary_School] = BoundaryFields[(int)Augusta_LAND_Fields.Elementary_School];
+                                        arrColumns[(int)Augusta_RES_Fields.Exterior_Finish] = BoundaryFields[(int)Augusta_LAND_Fields.Exterior_Finish]; 
+                                        arrColumns[(int)Augusta_RES_Fields.Financing_Type] = BoundaryFields[(int)Augusta_LAND_Fields.Financing_Type];
+                                        arrColumns[(int)Augusta_RES_Fields.Full_Baths] = BoundaryFields[(int)Augusta_LAND_Fields.Full_Baths];
+                                        arrColumns[(int)Augusta_RES_Fields.Half_Baths] = BoundaryFields[(int)Augusta_LAND_Fields.Half_Baths];
+                                        arrColumns[(int)Augusta_RES_Fields.High_School] = BoundaryFields[(int)Augusta_LAND_Fields.High_School];
+                                        arrColumns[(int)Augusta_RES_Fields.Interior_Features] = BoundaryFields[(int)Augusta_LAND_Fields.Interior_Features];
+                                        arrColumns[(int)Augusta_RES_Fields.LA_ID] = BoundaryFields[(int)Augusta_LAND_Fields.LA_ID];
+                                        arrColumns[(int)Augusta_RES_Fields.Latitude] = BoundaryFields[(int)Augusta_LAND_Fields.Latitude];
+                                        arrColumns[(int)Augusta_RES_Fields.Longitude] = BoundaryFields[(int)Augusta_LAND_Fields.Longitude];
+                                        arrColumns[(int)Augusta_RES_Fields.List_Price] = BoundaryFields[(int)Augusta_LAND_Fields.List_Price];
+                                        arrColumns[(int)Augusta_RES_Fields.Listing_Office] = BoundaryFields[(int)Augusta_LAND_Fields.Listing_Office];
+                                        arrColumns[(int)Augusta_RES_Fields.Lot_Description] = BoundaryFields[(int)Augusta_LAND_Fields.Lot_Description];
+                                        arrColumns[(int)Augusta_RES_Fields.Lot_Size] = BoundaryFields[(int)Augusta_LAND_Fields.Lot_Size];
+                                        arrColumns[(int)Augusta_RES_Fields.Middle_School] = BoundaryFields[(int)Augusta_LAND_Fields.Middle_School];
+                                        arrColumns[(int)Augusta_RES_Fields.MLS_Number] = BoundaryFields[(int)Augusta_LAND_Fields.MLS_Number];
+                                        arrColumns[(int)Augusta_RES_Fields.Neighborhood_Amenities] = BoundaryFields[(int)Augusta_LAND_Fields.Neighborhood_Amenities];
+                                        arrColumns[(int)Augusta_RES_Fields.New_Construction] = BoundaryFields[(int)Augusta_LAND_Fields.New_Construction];
+                                        arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces] = BoundaryFields[(int)Augusta_LAND_Fields.Number_Fireplaces];
+                                        arrColumns[(int)Augusta_RES_Fields.Photo_Count] = BoundaryFields[(int)Augusta_LAND_Fields.Photo_Count];
+                                        arrColumns[(int)Augusta_RES_Fields.Photo_location] = BoundaryFields[(int)Augusta_LAND_Fields.Photo_location];
+                                        arrColumns[(int)Augusta_RES_Fields.Pool] = BoundaryFields[(int)Augusta_LAND_Fields.Pool];
+                                        arrColumns[(int)Augusta_RES_Fields.Property_Description] = BoundaryFields[(int)Augusta_LAND_Fields.Property_Description];
+                                        arrColumns[(int)Augusta_RES_Fields.Property_Status] = BoundaryFields[(int)Augusta_LAND_Fields.Property_Status];
+                                        arrColumns[(int)Augusta_RES_Fields.Property_Type] = BoundaryFields[(int)Augusta_LAND_Fields.Property_Type];
+                                        arrColumns[(int)Augusta_RES_Fields.Showing_Instructions] = BoundaryFields[(int)Augusta_LAND_Fields.Showing_Instructions];
+                                        arrColumns[(int)Augusta_RES_Fields.State] = BoundaryFields[(int)Augusta_LAND_Fields.State];
+                                        arrColumns[(int)Augusta_RES_Fields.Street_Number] = BoundaryFields[(int)Augusta_LAND_Fields.Street_Number];
+                                        arrColumns[(int)Augusta_RES_Fields.Style] = BoundaryFields[(int)Augusta_LAND_Fields.Style];
+                                        arrColumns[(int)Augusta_RES_Fields.Subdivision] = BoundaryFields[(int)Augusta_LAND_Fields.Subdivision];
+                                        arrColumns[(int)Augusta_RES_Fields.Total_Acres] = BoundaryFields[(int)Augusta_LAND_Fields.Total_Acres];
+                                        arrColumns[(int)Augusta_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Augusta_LAND_Fields.Virtual_Tour];
+                                        arrColumns[(int)Augusta_RES_Fields.Zip_Code] = BoundaryFields[(int)Augusta_LAND_Fields.Zip_Code];
+                                    }
+                                    else if (intFeedType == FeedType.Agent)
+                                    {
+                                        arrColumns[(int)Augusta_Agent_Fields.Agent_Email] = BoundaryFields[(int)Augusta_Agent_Fields.Agent_Email];
+                                        arrColumns[(int)Augusta_Agent_Fields.AGENT_ID] = BoundaryFields[(int)Augusta_Agent_Fields.AGENT_ID];
+                                        arrColumns[(int)Augusta_Agent_Fields.Contact_Number] = BoundaryFields[(int)Augusta_Agent_Fields.Contact_Number];
+                                        arrColumns[(int)Augusta_Agent_Fields.First_Name] = BoundaryFields[(int)Augusta_Agent_Fields.First_Name];
+                                        arrColumns[(int)Augusta_Agent_Fields.Home] = BoundaryFields[(int)Augusta_Agent_Fields.Home];
+                                        arrColumns[(int)Augusta_Agent_Fields.Last_Name] = BoundaryFields[(int)Augusta_Agent_Fields.Last_Name];
+                                        arrColumns[(int)Augusta_Agent_Fields.Mail_Address_1] = BoundaryFields[(int)Augusta_Agent_Fields.Mail_Address_1];
+                                        arrColumns[(int)Augusta_Agent_Fields.Mail_City] = BoundaryFields[(int)Augusta_Agent_Fields.Mail_City];
+                                        arrColumns[(int)Augusta_Agent_Fields.Mail_State] = BoundaryFields[(int)Augusta_Agent_Fields.Mail_State];
+                                        arrColumns[(int)Augusta_Agent_Fields.Mail_Zip_Code] = BoundaryFields[(int)Augusta_Agent_Fields.Mail_Zip_Code];
+                                        arrColumns[(int)Augusta_Agent_Fields.Office_ID] = BoundaryFields[(int)Augusta_Agent_Fields.Office_ID];
+                                        arrColumns[(int)Augusta_Agent_Fields.Web_Address] = BoundaryFields[(int)Augusta_Agent_Fields.Web_Address];
+                                    }
+                                    else if (intFeedType == FeedType.Office)
+                                    {
+                                        arrColumns[(int)Office_Fields.Fax] = BoundaryFields[(int)Office_Fields.Fax];
+                                        arrColumns[(int)Office_Fields.Mail_Address_1] = BoundaryFields[(int)Office_Fields.Mail_Address_1];
+                                        arrColumns[(int)Office_Fields.Mail_City] = BoundaryFields[(int)Office_Fields.Mail_City];
+                                        arrColumns[(int)Office_Fields.Mail_State] = BoundaryFields[(int)Office_Fields.Mail_State];
+                                        arrColumns[(int)Office_Fields.Mail_Zip_Code] = BoundaryFields[(int)Office_Fields.Mail_Zip_Code];
+                                        arrColumns[(int)Office_Fields.Main] = BoundaryFields[(int)Office_Fields.Main];
+                                        arrColumns[(int)Office_Fields.Office_ID] = BoundaryFields[(int)Office_Fields.Office_ID];
+                                        arrColumns[(int)Office_Fields.Office_Name] = BoundaryFields[(int)Office_Fields.Office_Name];
+                                        arrColumns[(int)Office_Fields.Web_Address] = BoundaryFields[(int)Office_Fields.Web_Address];
+                                    }
+
+                                    // Do transformations on RES/LAND Data
+                                    if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential)
+                                    {
+                                        arrColumns[(int)Augusta_RES_Fields.Address] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.Address]);
+                                        arrColumns[(int)Augusta_RES_Fields.City] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.City]);
+                                        arrColumns[(int)Augusta_RES_Fields.Subdivision] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.Subdivision]);
+                                        arrColumns[(int)Augusta_RES_Fields.Elementary_School] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.Elementary_School]);
+                                        arrColumns[(int)Augusta_RES_Fields.Middle_School] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.Middle_School]);
+                                        arrColumns[(int)Augusta_RES_Fields.High_School] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.High_School]);
+                                        arrColumns[(int)Augusta_RES_Fields.County] = this.FixTitleCase(arrColumns[(int)Augusta_RES_Fields.County]);
+
+                                        // Fix Capitalize Columns
+                                        arrColumns[(int)Augusta_RES_Fields.State] = arrColumns[(int)Augusta_RES_Fields.State].ToUpper();
+
+                                        // Fix Sentence Type Columns
+                                        //arrColumns[(int)Augusta_RES_Fields.Property_Description] = this.FixSentenceCase(arrColumns[(int)Augusta_RES_Fields.Property_Description]);
+
+                                        // Update Agent Id Format.
+                                        arrColumns[(int)Augusta_RES_Fields.LA_ID] = arrColumns[(int)Augusta_RES_Fields.LA_ID].Replace("_", "-");
+
+                                        // Update New Construction
+                                        arrColumns[(int)Augusta_RES_Fields.New_Construction] = (arrColumns[(int)Augusta_RES_Fields.New_Construction] == "1" ? "Y" : "N");
+                                        arrColumns[(int)Augusta_RES_Fields.Pool] = (arrColumns[(int)Augusta_RES_Fields.Pool] == "1" ? "Y" : "N");
+
+                                        if(intFeedType == FeedType.Land)
+                                        {
+                                            if (arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces] == "0")
+                                            {
+                                                arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces] = "";
+                                            }
+
+                                            if (arrColumns[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt] == "0")
+                                            {
+                                                arrColumns[(int)Augusta_RES_Fields.Apx_Total_Heated_SqFt] = "";
+                                            }
+
+                                            if (arrColumns[(int)Augusta_RES_Fields.Bedrooms] == "0")
+                                            {
+                                                arrColumns[(int)Augusta_RES_Fields.Bedrooms] = "";
+                                            }
+
+                                            if (arrColumns[(int)Augusta_RES_Fields.Half_Baths] == "0")
+                                            {
+                                                arrColumns[(int)Augusta_RES_Fields.Half_Baths] = "";
+                                            }
+
+                                            if (arrColumns[(int)Augusta_RES_Fields.Full_Baths] == "0")
+                                            {
+                                                arrColumns[(int)Augusta_RES_Fields.Full_Baths] = "";
+                                            }
+
+                                            arrColumns[(int)Augusta_RES_Fields.Property_Type] = "Lots/Land";
+                                        }
+
+                                        // Attempt to get the Geolocation for properties you already have.
+                                    
+                                        strGeoLocation = this.GetMLSGeolocation(arrColumns[(int)Augusta_RES_Fields.MLS_Number], MLSType.Augusta);
+                                        if(strGeoLocation == null && !this.blnGoogleMapsOverLimit)
+                                        {
+                                            strGeoLocation = this.MapAddress(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Street_Number], arrColumns[(int)Augusta_RES_Fields.Address], arrColumns[(int)Augusta_RES_Fields.City], arrColumns[(int)Augusta_RES_Fields.State], arrColumns[(int)Augusta_RES_Fields.Zip_Code], MLSType.Augusta);
+                                        }
+                                    
+
+                                        // Increment the total properties consolidated
+                                        this.intTotalAugustaProperties++;
+
+                                        // If GeoLocation is not null, then add it to the columns.
+                                        if(strGeoLocation != null)
+                                        {
+                                            this.intTotalAugustaGeocodedProperties++;
+
+                                            arrColumns[(int)Augusta_RES_Fields.Latitude] = strGeoLocation[0];
+                                            arrColumns[(int)Augusta_RES_Fields.Longitude] = strGeoLocation[1];
+                                        }
+
+                                        if (intFeedType == FeedType.Residential)
+                                        {
+                                            this.ExportMySQLData(arrColumns, MLSType.Augusta, intFeedType);
+                                        }
+                                    }
+                                    else if (intFeedType == FeedType.Agent)
+                                    {
+                                        arrColumns[(int)Augusta_Agent_Fields.First_Name] = this.FixTitleCase(arrColumns[(int)Augusta_Agent_Fields.First_Name]);
+                                        arrColumns[(int)Augusta_Agent_Fields.Last_Name] = this.FixTitleCase(arrColumns[(int)Augusta_Agent_Fields.Last_Name]);
+                                        arrColumns[(int)Augusta_Agent_Fields.Mail_Address_1] = this.FixTitleCase(arrColumns[(int)Augusta_Agent_Fields.Mail_Address_1]);
+                                        arrColumns[(int)Augusta_Agent_Fields.Mail_City] = this.FixTitleCase(arrColumns[(int)Augusta_Agent_Fields.Mail_City]);
+
+                                        // Update Agent Id Format.
+                                        arrColumns[(int)Augusta_Agent_Fields.AGENT_ID] = arrColumns[(int)Augusta_Agent_Fields.AGENT_ID].Replace("_", "-");
+
+                                        // Clear out invalid Contact Number
+                                        if (arrColumns[(int)Augusta_Agent_Fields.Contact_Number] == "0")
+                                        {
+                                            arrColumns[(int)Augusta_Agent_Fields.Contact_Number] = "";
+                                        }
+
+                                        if (arrColumns[(int)Augusta_Agent_Fields.Home] == "0")
+                                        {
+                                            arrColumns[(int)Augusta_Agent_Fields.Home] = "";
+                                        }
+
+                                        this.intTotalAugustaAgents++;
+
+                                        this.ExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Agent);
+                                    }
+                                    else if (intFeedType == FeedType.Office)
+                                    {
+                                        arrColumns[(int)Office_Fields.Mail_Address_1] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_Address_1]);
+                                        arrColumns[(int)Office_Fields.Mail_City] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_City]);
+                                        arrColumns[(int)Office_Fields.Office_Name] = this.FixTitleCase(arrColumns[(int)Office_Fields.Office_Name]);
+
+                                        this.intTotalAugustaOffices++;
+
+                                        this.ExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Office);
+                                    }
+
+                                    bRecordFound = true;
+
+                                    // TODO: Save information in Linux Server
+
+                                    //Add data mls id, photo url to dictionary
+                                    if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential)
+                                    {
+                                        if (Constant.PHOTO_TEST.ContainsKey(arrColumns[(int)Augusta_RES_Fields.MLS_Number]) && !dictMlsPhotos.ContainsKey(arrColumns[(int)Augusta_RES_Fields.MLS_Number]))
+                                        {
+                                            dictMlsPhotos.Add(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Photo_location]);
+                                        }
+                                    }
+
+                                    // Write out the columns in sequential order, the columns should have been defined sequentially
+                                    for (int intIndex = 0; intIndex < arrColumns.Length; intIndex++)
+                                    {
+                                        file.Write("\"" + arrColumns[intIndex] + "\"");
+
+                                        if (intIndex < arrColumns.Length - 1)
+                                        {
+                                            file.Write(",");
+                                        }
+                                        else
+                                        {
+                                            file.WriteLine("");
+                                        }
                                     }
                                 }
-                                else if (intFeedType == FeedType.Agent)
+                                catch (Exception ex)
                                 {
-                                    arrColumns[(int)Augusta_Agent_Fields.First_Name] = this.FixTitleCase(arrColumns[(int)Augusta_Agent_Fields.First_Name]);
-                                    arrColumns[(int)Augusta_Agent_Fields.Last_Name] = this.FixTitleCase(arrColumns[(int)Augusta_Agent_Fields.Last_Name]);
-                                    arrColumns[(int)Augusta_Agent_Fields.Mail_Address_1] = this.FixTitleCase(arrColumns[(int)Augusta_Agent_Fields.Mail_Address_1]);
-                                    arrColumns[(int)Augusta_Agent_Fields.Mail_City] = this.FixTitleCase(arrColumns[(int)Augusta_Agent_Fields.Mail_City]);
-
-                                    // Update Agent Id Format.
-                                    arrColumns[(int)Augusta_Agent_Fields.AGENT_ID] = arrColumns[(int)Augusta_Agent_Fields.AGENT_ID].Replace("_", "-");
-
-                                    // Clear out invalid Contact Number
-                                    if (arrColumns[(int)Augusta_Agent_Fields.Contact_Number] == "0")
-                                    {
-                                        arrColumns[(int)Augusta_Agent_Fields.Contact_Number] = "";
-                                    }
-
-                                    if (arrColumns[(int)Augusta_Agent_Fields.Home] == "0")
-                                    {
-                                        arrColumns[(int)Augusta_Agent_Fields.Home] = "";
-                                    }
-
-                                    this.intTotalAugustaAgents++;
-
-                                    this.RunExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Agent);
-                                }
-                                else if (intFeedType == FeedType.Office)
-                                {
-                                    arrColumns[(int)Office_Fields.Mail_Address_1] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_Address_1]);
-                                    arrColumns[(int)Office_Fields.Mail_City] = this.FixTitleCase(arrColumns[(int)Office_Fields.Mail_City]);
-                                    arrColumns[(int)Office_Fields.Office_Name] = this.FixTitleCase(arrColumns[(int)Office_Fields.Office_Name]);
-
-                                    this.intTotalAugustaOffices++;
-
-                                    this.RunExportMySQLData(arrColumns, MLSType.Augusta, FeedType.Office);
-                                }
-
-                                // TODO: Save information in Linux Server
-
-                                //Add data mls id, photo url to dictionary
-                                if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential)
-                                {
-                                    if (Constant.PHOTO_TEST.ContainsKey(arrColumns[(int)Augusta_RES_Fields.MLS_Number]) && !dictMlsPhotos.ContainsKey(arrColumns[(int)Augusta_RES_Fields.MLS_Number]))
-                                    {
-                                        dictMlsPhotos.Add(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Photo_location]);
-                                    }
-                                }
-
-                                // Write out the columns in sequential order, the columns should have been defined sequentially
-                                for (int intIndex = 0; intIndex < arrColumns.Length; intIndex++)
-                                {
-                                    file.Write("\"" + arrColumns[intIndex] + "\"");
-
-                                    if (intIndex < arrColumns.Length - 1)
-                                    {
-                                        file.Write(",");
-                                    }
-                                    else
-                                    {
-                                        file.WriteLine("");
-                                    }
+                                    bFatalError = true;
+                                    bBlockPropertyPurge = true;
+                                    this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running Import Augusta Files. - Details: " + ex.Message + "</i></b>");
                                 }
                             }
+                        }
+                    }
+
+                    if (!bRecordFound)
+                    {
+                        this.WriteToLog(String.Format("<br /><b><i style=\"color:red;\">No Records Found in File {0}.</i></b>", arrFilePaths[intFileIndex]));
+
+                        if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential) { 
+                            bBlockPropertyPurge = true;
+                            bFatalError = true;
                         }
                     }
                 }
@@ -1867,18 +2007,22 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                    INSERT INTO agents_soap SELECT * FROM agents;   
                                    INSERT INTO offices_soap SELECT * FROM offices; ";
 
-            using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
+            //using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
+            if (connMySqlConnection.State == ConnectionState.Open)
             {
-                using (MySqlCommand command = new MySqlCommand(strCommand, connection))
+                using (MySqlCommand command = new MySqlCommand(strCommand, connMySqlConnection))
                 {
+                    command.CommandTimeout = 300;
+
                     try
                     {
-                        connection.Open();
+                        //connection.Open();
                         command.ExecuteNonQuery();
-                        connection.Close();
+                        //connection.Close();
                     }
                     catch(Exception ex)
                     {
+                        bFatalError = true;
                         this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running MigrateAugustaMySQLData SQL - Details: " + ex.Message + "</i></b>");
                     }
                 }

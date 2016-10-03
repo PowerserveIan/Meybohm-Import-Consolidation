@@ -20,27 +20,37 @@ namespace Meybohm_REAMLS_Consolidation
 
             bool blnIsIncremental = (arrParameters.Length > 0 && arrParameters[0].ToLower() == "inc");
             string[] arrFileList;
-
+            
             UtilityLibrary utilityLibrary = new UtilityLibrary(blnIsIncremental);
-
+            
             utilityLibrary.WriteToLog("");
+
+            //Send a test email to make sure it works
+            if (arrParameters.Length > 1 && arrParameters[1].ToLower() == "testemail")
+            {
+                utilityLibrary.EmailLogStatus();
+                return;
+            }
+
             utilityLibrary.WriteToLog("<h2>Parsing and concatenation of files has been started: " + DateTime.Now.ToString("G") + "</h2>");
             utilityLibrary.WriteToLog("<h3>1) Starting to process Aiken Files...</h3>");
-            
+
+            // Begin Reading Aiken Files
             arrFileList = utilityLibrary.GetFilesList(CityType.Aiken, FeedType.Residential);
             utilityLibrary.ProcessAikenFiles(arrFileList, FeedType.Residential);
-
+            
             arrFileList = utilityLibrary.GetFilesList(CityType.Aiken, FeedType.Land);
             utilityLibrary.ProcessAikenFiles(arrFileList, FeedType.Land);
-
+            
             arrFileList = utilityLibrary.GetFilesList(CityType.Aiken, FeedType.Agent);
             utilityLibrary.ProcessAikenFiles(arrFileList, FeedType.Agent);
-
+            
             arrFileList = utilityLibrary.GetFilesList(CityType.Aiken, FeedType.Office);
             utilityLibrary.ProcessAikenFiles(arrFileList, FeedType.Office);
-
+            
             utilityLibrary.WriteToLog("<h3>1) Finished processing Aiken Files.</h3>");
             utilityLibrary.WriteToLog("<h3>2) Starting to process Augusta Files...</h3>");
+            
             // Begin Reading Augusta Files
             arrFileList = utilityLibrary.GetFilesList(CityType.Augusta, FeedType.Residential);
             utilityLibrary.ProcessAugustaFiles(arrFileList, FeedType.Residential);
@@ -61,6 +71,8 @@ namespace Meybohm_REAMLS_Consolidation
             utilityLibrary.WriteToLog("<h3>3) Migrating Augusta MySQL Data... " + DateTime.Now.ToString("G") + "</h3>");
 
             utilityLibrary.MigrateAugustaMySQLData();
+
+            utilityLibrary.CloseMySqlConnection();
 
             utilityLibrary.WriteToLog("<h3>3) Finished Migrating Augusta MySQL Data. " + DateTime.Now.ToString("G") + "</h3>");
             
@@ -87,10 +99,7 @@ namespace Meybohm_REAMLS_Consolidation
             // Write out the statistics
             utilityLibrary.WriteStatistics();
 
-            if (!blnIsIncremental)
-            {
-                utilityLibrary.EmailLogStatus();
-            }
+            utilityLibrary.EmailLogStatus();
         }
     }
 }

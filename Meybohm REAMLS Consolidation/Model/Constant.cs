@@ -33,6 +33,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
         public static string GOOGLE_API_STATUS_OVER_LIMIT = "OVER_QUERY_LIMIT";
         public static string GOOGLE_API_ZERO_RESULTS = "ZERO_RESULTS";
         public static string[] EMAIL_RECEIVER = ConfigurationManager.AppSettings["EMAIL_RECEIVER"].Split(';');
+        public static string[] EMAIL_RECEIVER_INC = ConfigurationManager.AppSettings["EMAIL_RECEIVER_INC"].Split(';');
+        public static string EMAIL_SENDER = ConfigurationManager.AppSettings["EMAIL_SENDER"];
 
         public static Dictionary<string, string> PHOTO_TEST = new Dictionary<string, string>() {
             {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_1"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_1"]},
@@ -45,6 +47,17 @@ namespace Meybohm_REAMLS_Consolidation.Model
             {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_8"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_8"]},
             {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_9"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_9"]},
             {ConfigurationManager.AppSettings["PHOTO_TEST_MLSID_10"], ConfigurationManager.AppSettings["PHOTO_TEST_URL_10"]}
+        };
+
+        public static Dictionary<string, int> FILE_COUNT = new Dictionary<string, int>() {
+            {CityType.Aiken + "_" + FeedType.Residential, Int32.Parse(ConfigurationManager.AppSettings["AIKEN_RES_FILE_COUNT"])},
+            {CityType.Aiken + "_" + FeedType.Land, Int32.Parse(ConfigurationManager.AppSettings["AIKEN_LAND_FILE_COUNT"])},
+            {CityType.Aiken + "_" + FeedType.Agent, Int32.Parse(ConfigurationManager.AppSettings["AIKEN_AGENT_FILE_COUNT"])},
+            {CityType.Aiken + "_" + FeedType.Office, Int32.Parse(ConfigurationManager.AppSettings["AIKEN_OFFICE_FILE_COUNT"])},
+            {CityType.Augusta + "_" + FeedType.Residential, Int32.Parse(ConfigurationManager.AppSettings["AUGUSTA_RES_FILE_COUNT"])},
+            {CityType.Augusta + "_" + FeedType.Land, Int32.Parse(ConfigurationManager.AppSettings["AUGUSTA_LAND_FILE_COUNT"])},
+            {CityType.Augusta + "_" + FeedType.Agent, Int32.Parse(ConfigurationManager.AppSettings["AUGUSTA_AGENT_FILE_COUNT"])},
+            {CityType.Augusta + "_" + FeedType.Office, Int32.Parse(ConfigurationManager.AppSettings["AUGUSTA_OFFICE_FILE_COUNT"])}
         };
     }
 
@@ -275,6 +288,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
         Half_Baths,
         High_School,
         Interior_Features,
+        LA_ID,
         List_Price,
         Listing_Office,
         Lot_Description,
