@@ -123,7 +123,10 @@ namespace Meybohm_REAMLS_Consolidation.Model
         Directions = 34,
         List_Date = 35,
         Total_Acres = 36,
-        Photo_Location = 37
+        Horses_Allowed = 37,
+        Lot_Description = 38,
+        County = 39,
+        Photo_Location = 40
     }
 
     /// <summary>
@@ -155,6 +158,15 @@ namespace Meybohm_REAMLS_Consolidation.Model
         Directions,
         List_Date,
         Apx_Total_Acreage,
+        Horses,
+        Present_Use,
+        Best_Use,
+        Topography,
+        Crops,
+        Buildings_On_Property,
+        Other_Improvements,
+        Amenities,
+        County,
         Photo_Location
     }
 
@@ -312,6 +324,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
         Total_Acres,
         Latitude,
         Longitude,
+        Land_Description,
         Photo_location
     }
 

@@ -213,7 +213,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
                     }
                     catch (Exception ex)
                     {
-                        bFatalError = true;
+                        if (!this.blnIsIncremental)
+                            bFatalError = true;
                         this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running ClearMySQLData SQL - Details: " + ex.Message + "</i></b>");
                     }
                 }
@@ -439,6 +440,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
             string strCommand = "";
             string strCommandSupport = "";
 
+            string[] arrColumnHeaders = null;
+
             try
             {
                 //using (MySqlConnection connection = new MySqlConnection(ConfigurationManager.ConnectionStrings["MySQLServer"].ToString()))
@@ -453,19 +456,21 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
                     if (intMLSType == MLSType.Aiken)
                     {
+                        arrColumnHeaders = Constant.AIKEN_RESIDENTIAL_HEADER.Split(',');
+
                         switch (intFeedType)
                         {
                             case FeedType.Residential:
                                 // Export Property Photos
-                                this.ImportPropertyPhotos(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Photo_Location], intMLSType);
+                                this.ImportPropertyPhotos(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[arrColumns.Length - 1], intMLSType);
 
                                 strCommand = @" INSERT INTO prop_aik (  propid,street_number,street_address,subdivision,city,state,zip,price_list,list_office,list_agentid,prop_type,
 				 	                                                        public_remarks,year_built,style,ext_features,int_features,lot_size,lot_desc,sqft_total,baths,baths_half,bedrooms,foundation,flooring,garage,attic,
-				 	                                                        hvac,school_elem,school_high,school_mid,photo_count,vt_url,allow_avm,builder,new_const,status) 
+				 	                                                        hvac,school_elem,school_high,school_mid,photo_count,vt_url,allow_avm,builder,new_const,status,county) 
                                                     VALUES (@propid,@street_number,@street_name,@subdivision,@city,@state,@zip,
 				 	                                        @price_list,@list_office,@list_agentid,@prop_type,@public_remarks,@year_built,@style,@ext_features,@int_features,@lot_size,
 				 	                                        @lot_desc,@sqft_total,@baths,@baths_half,@bedrooms,@foundation,@flooring,@garage,@attic,@hvac,@school_elem,@school_high,
-				 	                                        @school_mid,@photo_count,@vt_url,@allow_avm,@builder,@new_const,@status)";
+				 	                                        @school_mid,@photo_count,@vt_url,@allow_avm,@builder,@new_const,@status,@county)";
                                 strCommandSupport = @"  INSERT INTO aux_aik (propid,updated,directions,acres_total) VALUES (@propid,'N',@directions,@acres_total)";
 
                                 command.CommandText = strCommand;
@@ -481,6 +486,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                 command.Parameters.AddWithValue("@street_name", arrColumns[(int)Aiken_RES_Fields.Address]);
                                 command.Parameters.AddWithValue("@subdivision", arrColumns[(int)Aiken_RES_Fields.Town_Subdivision]);
                                 command.Parameters.AddWithValue("@city", arrColumns[(int)Aiken_RES_Fields.City]);
+                                command.Parameters.AddWithValue("@county", arrColumns[Array.IndexOf(arrColumnHeaders, "County")]);
                                 command.Parameters.AddWithValue("@state", arrColumns[(int)Aiken_RES_Fields.State]);
                                 command.Parameters.AddWithValue("@zip", arrColumns[(int)Aiken_RES_Fields.Zip_Code]);
                                 command.Parameters.AddWithValue("@price_list", arrColumns[(int)Aiken_RES_Fields.List_Price]);
@@ -506,7 +512,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                 command.Parameters.AddWithValue("@school_elem", arrColumns[(int)Aiken_RES_Fields.Elementary_School]);
                                 command.Parameters.AddWithValue("@school_high", arrColumns[(int)Aiken_RES_Fields.High_School]);
                                 command.Parameters.AddWithValue("@school_mid", arrColumns[(int)Aiken_RES_Fields.Middle_School]);
-                                command.Parameters.AddWithValue("@photo_count", arrColumns[(int)Aiken_RES_Fields.Photo_Location].Split(',').Count());
+                                command.Parameters.AddWithValue("@photo_count", arrColumns[arrColumns.Length - 1].Split(',').Count());
                                 command.Parameters.AddWithValue("@vt_url", arrColumns[(int)Aiken_RES_Fields.Virtual_Tour]);
                                 command.Parameters.AddWithValue("@allow_avm", DBNull.Value);
                                 command.Parameters.AddWithValue("@builder", arrColumns[(int)Aiken_RES_Fields.Builder_Name]);
@@ -578,7 +584,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                         switch (intFeedType)
                         {
                             case FeedType.Residential:
-                                this.ImportPropertyPhotos(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Photo_location], intMLSType);
+                                this.ImportPropertyPhotos(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[arrColumns.Length - 1], intMLSType);
 
                                 strCommand = @" INSERT INTO prop_res (  hvac,city,county,state,street_name,street_number,subdivision,zip,appliances,attic,basement,baths,b2_length,
 				 	                                                b2_level,b2_width,b3_length,b3_level,b3_width,b4_length,b4_level,b4_width,b5_length,b5_level,b5_width,bedrooms,breakfast_length,breakfast_level,
@@ -672,7 +678,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                 command.Parameters.AddWithValue("@propid", arrColumns[(int)Augusta_RES_Fields.MLS_Number]);
                                 command.Parameters.AddWithValue("@amenities", arrColumns[(int)Augusta_RES_Fields.Neighborhood_Amenities]);
                                 command.Parameters.AddWithValue("@new_cons", arrColumns[(int)Augusta_RES_Fields.New_Construction]);
-                                command.Parameters.AddWithValue("@photo_count", arrColumns[(int)Augusta_RES_Fields.Photo_Count]);
+                                command.Parameters.AddWithValue("@photo_count", arrColumns[arrColumns.Length - 1]);
                                 command.Parameters.AddWithValue("@pool", arrColumns[(int)Augusta_RES_Fields.Pool]);
                                 command.Parameters.AddWithValue("@porch", DBNull.Value);
                                 command.Parameters.AddWithValue("@prop_age", DBNull.Value);
@@ -769,7 +775,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
             }
             catch (Exception ex)
             {
-                bFatalError = true;
+                if (!this.blnIsIncremental)
+                    bFatalError = true;
                 this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running ExportMySQLData: " + ex.Message + "</i></b>");
                 this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running ExportMySQLData - Details: " + ex.StackTrace + "</i></b>");
             }
@@ -844,7 +851,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
                 if (Constant.FILE_COUNT.ContainsKey(intCityType + "_" + intFeedType)) { 
                     if (Constant.FILE_COUNT[intCityType + "_" + intFeedType] != listFilePaths.Count)
                     {
-                        bFatalError = true;
+                        if (!this.blnIsIncremental)
+                            bFatalError = true;
                         this.WriteToLog("<br /><b><i style=\"color:red;\">Missing file for " + Enum.GetName(typeof(CityType), intCityType) + " " + Enum.GetName(typeof(FeedType), intFeedType) + "</i></b>");
                         this.bBlockPropertyPurge = true;
                     }
@@ -1098,6 +1106,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
             bool bRecordFound = false;
 
             string[] arrColumns = null;
+            string[] arrColumnHeaders = null;
 
             if (arrFilePaths.Length == 0)
             {
@@ -1128,16 +1137,19 @@ namespace Meybohm_REAMLS_Consolidation.Model
             if (intFeedType == FeedType.Residential || intFeedType == FeedType.Land)
             {
                 arrColumns = Constant.AIKEN_RESIDENTIAL_HEADER.Split(',');
+                arrColumnHeaders = Constant.AIKEN_RESIDENTIAL_HEADER.Split(',');
                 strFileName = "Meybohm-Aiken-ALL" + (this.blnIsIncremental ? "" : "Full") + ".csv";
             }
             else if (intFeedType == FeedType.Agent)
             {
                 arrColumns = Constant.AIKEN_AGENT_HEADER.Split(',');
+                arrColumnHeaders = Constant.AIKEN_AGENT_HEADER.Split(',');
                 strFileName = "Meybohm-Aiken-Agents.csv";
             }
             else if (intFeedType == FeedType.Office)
             {
                 arrColumns = Constant.OFFICE_HEADER.Split(',');
+                arrColumnHeaders = Constant.OFFICE_HEADER.Split(',');
                 strFileName = "Meybohm-Aiken-Offices.csv";
             }
 
@@ -1217,6 +1229,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Aiken_RES_Fields.Bedrooms] = BoundaryFields[(int)Aiken_RES_Fields.Bedrooms];
                                         arrColumns[(int)Aiken_RES_Fields.Builder_Name] = BoundaryFields[(int)Aiken_RES_Fields.Builder_Name];
                                         arrColumns[(int)Aiken_RES_Fields.City] = BoundaryFields[(int)Aiken_RES_Fields.City];
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "County")] = BoundaryFields[(int)Aiken_RES_Fields.County];
                                         arrColumns[(int)Aiken_RES_Fields.Directions] = BoundaryFields[(int)Aiken_RES_Fields.Directions];
                                         arrColumns[(int)Aiken_RES_Fields.Elementary_School] = BoundaryFields[(int)Aiken_RES_Fields.Elementary_School];
                                         arrColumns[(int)Aiken_RES_Fields.Exterior_Features] = BoundaryFields[(int)Aiken_RES_Fields.Exterior_Features];
@@ -1236,7 +1249,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Aiken_RES_Fields.Middle_School] = BoundaryFields[(int)Aiken_RES_Fields.Middle_School];
                                         arrColumns[(int)Aiken_RES_Fields.MLS_Number] = BoundaryFields[(int)Aiken_RES_Fields.MLS_Number];
                                         arrColumns[(int)Aiken_RES_Fields.New_Construction] = BoundaryFields[(int)Aiken_RES_Fields.New_Construction];
-                                        arrColumns[(int)Aiken_RES_Fields.Photo_Location] = BoundaryFields[(int)Aiken_RES_Fields.Photo_Location];
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "Photo Location")] = BoundaryFields[(int)Aiken_RES_Fields.Photo_Location];
                                         arrColumns[(int)Aiken_RES_Fields.Property_Description] = BoundaryFields[(int)Aiken_RES_Fields.Property_Description];
                                         arrColumns[(int)Aiken_RES_Fields.Property_Status] = BoundaryFields[(int)Aiken_RES_Fields.Property_Status];
                                         arrColumns[(int)Aiken_RES_Fields.Property_Type] = BoundaryFields[(int)Aiken_RES_Fields.Property_Type];
@@ -1248,6 +1261,22 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Aiken_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Aiken_RES_Fields.Virtual_Tour];
                                         arrColumns[(int)Aiken_RES_Fields.Year_Built] = BoundaryFields[(int)Aiken_RES_Fields.Year_Built];
                                         arrColumns[(int)Aiken_RES_Fields.Zip_Code] = BoundaryFields[(int)Aiken_RES_Fields.Zip_Code];
+
+                                        // Set Equestrian
+                                        /*
+                                         *  *   HORSES ALLOWED is set to "Y"
+                                            *   LOT DESCRIPTION includes Pasture Land
+                                            -   EXTERIOR FEATURES includes includes Barn or Stables
+                                         */
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "";
+                                        if (BoundaryFields[(int)Aiken_RES_Fields.Horses_Allowed].ToLower() == "y")
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_RES_Fields.Lot_Description].ToLower().IndexOf("pasture land") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_RES_Fields.Exterior_Features].ToLower().IndexOf("barn") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_RES_Fields.Exterior_Features].ToLower().IndexOf("stables") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
                                     }
                                     else if (intFeedType == FeedType.Land)
                                     {
@@ -1255,6 +1284,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Aiken_RES_Fields.Apx_Heated_SqFt] = BoundaryFields[(int)Aiken_LAND_Fields.Apx_Heated_SqFt];
                                         arrColumns[(int)Aiken_RES_Fields.Total_Acres] = BoundaryFields[(int)Aiken_LAND_Fields.Apx_Total_Acreage];
                                         arrColumns[(int)Aiken_RES_Fields.City] = BoundaryFields[(int)Aiken_LAND_Fields.City];
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "County")] = BoundaryFields[(int)Aiken_LAND_Fields.County];
                                         arrColumns[(int)Aiken_RES_Fields.Directions] = BoundaryFields[(int)Aiken_LAND_Fields.Directions];
                                         arrColumns[(int)Aiken_RES_Fields.Elementary_School] = BoundaryFields[(int)Aiken_LAND_Fields.Elementary_School];
                                         arrColumns[(int)Aiken_RES_Fields.High_School] = BoundaryFields[(int)Aiken_LAND_Fields.High_School];
@@ -1267,7 +1297,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Aiken_RES_Fields.Middle_School] = BoundaryFields[(int)Aiken_LAND_Fields.Middle_School];
                                         arrColumns[(int)Aiken_RES_Fields.MLS_Number] = BoundaryFields[(int)Aiken_LAND_Fields.MLS_Number];
                                         arrColumns[(int)Aiken_RES_Fields.New_Construction] = BoundaryFields[(int)Aiken_LAND_Fields.New_Construction];
-                                        arrColumns[(int)Aiken_RES_Fields.Photo_Location] = BoundaryFields[(int)Aiken_LAND_Fields.Photo_Location];
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "Photo Location")] = BoundaryFields[(int)Aiken_LAND_Fields.Photo_Location];
                                         arrColumns[(int)Aiken_RES_Fields.Property_Status] = BoundaryFields[(int)Aiken_LAND_Fields.Property_Status];
                                         arrColumns[(int)Aiken_RES_Fields.Property_Type] = BoundaryFields[(int)Aiken_LAND_Fields.Property_Type];
                                         arrColumns[(int)Aiken_RES_Fields.Property_Description] = BoundaryFields[(int)Aiken_LAND_Fields.Remarks];
@@ -1276,6 +1306,54 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Aiken_RES_Fields.Town_Subdivision] = BoundaryFields[(int)Aiken_LAND_Fields.Town_Subdivision];
                                         arrColumns[(int)Aiken_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Aiken_LAND_Fields.Virtual_Tour];
                                         arrColumns[(int)Aiken_RES_Fields.Zip_Code] = BoundaryFields[(int)Aiken_LAND_Fields.Zip_Code];
+
+                                        // Set Equestrian
+                                        /*
+                                         *    *   HORSES is not null or set to "None" (May contain: Allowed, Racing Stables, Training Track, Riding Stables, Family Use, Polo, or Other - See Remarks)
+                                              *   PRESENT USE includes Horses, Horses & Other or Pasture
+                                              *   BEST USE includes Horse & Equestrian or Grazing
+                                              *   TOPOGRAPHY includes Grass/Pasture
+                                              *   CROPS includes Coastal Bermuda
+                                              *   BUILDINGS ON PROPERTY includes Barns, Stable or Hay Shed
+                                              *   OTHER IMPROVEMENTS includes Paddocks, Run-In Shed, Training Track, Wash Rack, or Hay Storage Building
+                                              *   AMENITIES includes Equine Riding Easement or Community Riding Area
+                                         */
+
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "";
+                                        if (!string.IsNullOrEmpty(BoundaryFields[(int)Aiken_LAND_Fields.Horses]) && BoundaryFields[(int)Aiken_LAND_Fields.Horses].ToLower() != "none")
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Present_Use].ToLower().IndexOf("horses") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Present_Use].ToLower().IndexOf("pasture") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Best_Use].ToLower().IndexOf("horse & equestrian") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Best_Use].ToLower().IndexOf("grazing") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Topography].ToLower().IndexOf("grass/pasture") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Crops].ToLower().IndexOf("coastal bermuda") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Buildings_On_Property].ToLower().IndexOf("barns") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Buildings_On_Property].ToLower().IndexOf("stable") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Buildings_On_Property].ToLower().IndexOf("hay shed") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Other_Improvements].ToLower().IndexOf("paddocks") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Other_Improvements].ToLower().IndexOf("run-in shed") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Other_Improvements].ToLower().IndexOf("training track") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Other_Improvements].ToLower().IndexOf("wash rack") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Other_Improvements].ToLower().IndexOf("hay storage building") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Amenities].ToLower().IndexOf("equine riding easement") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Aiken_LAND_Fields.Amenities].ToLower().IndexOf("community riding area") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
                                     }
                                     else if (intFeedType == FeedType.Agent)
                                     {
@@ -1313,6 +1391,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Aiken_RES_Fields.Address] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Address]);
                                         arrColumns[(int)Aiken_RES_Fields.Town_Subdivision] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Town_Subdivision]);
                                         arrColumns[(int)Aiken_RES_Fields.City] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.City]);
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "County")] = this.FixTitleCase(arrColumns[Array.IndexOf(arrColumnHeaders, "County")]);
                                         arrColumns[(int)Aiken_RES_Fields.Exterior_Features] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Exterior_Features]);
                                         arrColumns[(int)Aiken_RES_Fields.Interior_Features] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Interior_Features]);
                                         arrColumns[(int)Aiken_RES_Fields.Foundation_Basement] = this.FixTitleCase(arrColumns[(int)Aiken_RES_Fields.Foundation_Basement]);
@@ -1417,7 +1496,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                     {
                                         if (Constant.PHOTO_TEST.ContainsKey(arrColumns[(int)Aiken_RES_Fields.MLS_Number]) && !dictMlsPhotos.ContainsKey(arrColumns[(int)Aiken_RES_Fields.MLS_Number]))
                                         { 
-                                            dictMlsPhotos.Add(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[(int)Aiken_RES_Fields.Photo_Location]);
+                                            dictMlsPhotos.Add(arrColumns[(int)Aiken_RES_Fields.MLS_Number], arrColumns[Array.IndexOf(arrColumnHeaders, "Photo Location")]);
                                         }
                                     }
 
@@ -1454,7 +1533,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
                         if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential) { 
                             bBlockPropertyPurge = true;
-                            bFatalError = true;
+                            if (!this.blnIsIncremental)
+                                bFatalError = true;
                         }
                     }
                 }
@@ -1476,6 +1556,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
             bool bRecordFound = false;
 
             string[] arrColumns = null;
+            string[] arrColumnHeaders = null;
             string[] strGeoLocation;
 
             if (arrFilePaths.Length == 0)
@@ -1507,16 +1588,19 @@ namespace Meybohm_REAMLS_Consolidation.Model
             if (intFeedType == FeedType.Residential || intFeedType == FeedType.Land)
             {
                 arrColumns = Constant.AUGUSTA_RESIDENTIAL_HEADER.Split(',');
+                arrColumnHeaders = Constant.AUGUSTA_RESIDENTIAL_HEADER.Split(',');
                 strFileName = "Meybohm-Augusta-ALL" + (this.blnIsIncremental ? "" : "Full") + ".csv";
             }
             else if (intFeedType == FeedType.Agent)
             {
                 arrColumns = Constant.AUGUSTA_AGENT_HEADER.Split(',');
+                arrColumnHeaders = Constant.AUGUSTA_AGENT_HEADER.Split(',');
                 strFileName = "Meybohm-Augusta-Agents.csv";
             }
             else if (intFeedType == FeedType.Office)
             {
                 arrColumns = Constant.OFFICE_HEADER.Split(',');
+                arrColumnHeaders = Constant.OFFICE_HEADER.Split(',');
                 strFileName = "Meybohm-Augusta-Offices.csv";
             }
 
@@ -1661,7 +1745,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Level] = BoundaryFields[(int)Augusta_RES_Fields.Owner_Bedroom_Level];
                                         arrColumns[(int)Augusta_RES_Fields.Owner_Bedroom_Width] = BoundaryFields[(int)Augusta_RES_Fields.Owner_Bedroom_Width];
                                         arrColumns[(int)Augusta_RES_Fields.Photo_Count] = BoundaryFields[(int)Augusta_RES_Fields.Photo_Count];
-                                        arrColumns[(int)Augusta_RES_Fields.Photo_location] = BoundaryFields[(int)Augusta_RES_Fields.Photo_location];
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "Photo Location")] = BoundaryFields[(int)Augusta_RES_Fields.Photo_location];
                                         arrColumns[(int)Augusta_RES_Fields.Pool] = BoundaryFields[(int)Augusta_RES_Fields.Pool];
                                         arrColumns[(int)Augusta_RES_Fields.Property_Description] = BoundaryFields[(int)Augusta_RES_Fields.Property_Description];
                                         arrColumns[(int)Augusta_RES_Fields.Property_Status] = BoundaryFields[(int)Augusta_RES_Fields.Property_Status];
@@ -1678,6 +1762,22 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Augusta_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Augusta_RES_Fields.Virtual_Tour];
                                         arrColumns[(int)Augusta_RES_Fields.Water] = BoundaryFields[(int)Augusta_RES_Fields.Water];
                                         arrColumns[(int)Augusta_RES_Fields.Zip_Code] = BoundaryFields[(int)Augusta_RES_Fields.Zip_Code];
+
+
+                                        // Set Equestrian
+                                        /*
+                                         *    -   'Property Description' includes case-insensitive string "horses allowed"
+                                              -   EXTERIOR FEATURES includes Fence-Pasture
+                                              -   EXTERIOR FEATURES includes Barn
+                                         */
+
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "";
+                                        if (BoundaryFields[(int)Augusta_RES_Fields.Property_Description].ToLower().IndexOf("horses allowed") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Augusta_RES_Fields.Exterior_Features].ToLower().IndexOf("fence-pasture") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Augusta_RES_Fields.Exterior_Features].ToLower().IndexOf("barn") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
                                     }
                                     else if (intFeedType == FeedType.Land)
                                     {
@@ -1708,7 +1808,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Augusta_RES_Fields.New_Construction] = BoundaryFields[(int)Augusta_LAND_Fields.New_Construction];
                                         arrColumns[(int)Augusta_RES_Fields.Number_Fireplaces] = BoundaryFields[(int)Augusta_LAND_Fields.Number_Fireplaces];
                                         arrColumns[(int)Augusta_RES_Fields.Photo_Count] = BoundaryFields[(int)Augusta_LAND_Fields.Photo_Count];
-                                        arrColumns[(int)Augusta_RES_Fields.Photo_location] = BoundaryFields[(int)Augusta_LAND_Fields.Photo_location];
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "Photo Location")] = BoundaryFields[(int)Augusta_LAND_Fields.Photo_location];
                                         arrColumns[(int)Augusta_RES_Fields.Pool] = BoundaryFields[(int)Augusta_LAND_Fields.Pool];
                                         arrColumns[(int)Augusta_RES_Fields.Property_Description] = BoundaryFields[(int)Augusta_LAND_Fields.Property_Description];
                                         arrColumns[(int)Augusta_RES_Fields.Property_Status] = BoundaryFields[(int)Augusta_LAND_Fields.Property_Status];
@@ -1721,6 +1821,18 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                         arrColumns[(int)Augusta_RES_Fields.Total_Acres] = BoundaryFields[(int)Augusta_LAND_Fields.Total_Acres];
                                         arrColumns[(int)Augusta_RES_Fields.Virtual_Tour] = BoundaryFields[(int)Augusta_LAND_Fields.Virtual_Tour];
                                         arrColumns[(int)Augusta_RES_Fields.Zip_Code] = BoundaryFields[(int)Augusta_LAND_Fields.Zip_Code];
+
+
+                                        // Set Equestrian
+                                        /*
+                                         *   *   LAND DESCRIPTION includes Horses Allowed
+                                             -   LOT DESCRIPTION includes Established Pasture
+                                         */
+                                        arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "";
+                                        if (BoundaryFields[(int)Augusta_LAND_Fields.Land_Description].ToLower().IndexOf("horses allowed") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
+                                        else if (BoundaryFields[(int)Augusta_LAND_Fields.Lot_Description].ToLower().IndexOf("established pasture") > -1)
+                                            arrColumns[Array.IndexOf(arrColumnHeaders, "Equestrian")] = "Y";
                                     }
                                     else if (intFeedType == FeedType.Agent)
                                     {
@@ -1875,7 +1987,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
                                     {
                                         if (Constant.PHOTO_TEST.ContainsKey(arrColumns[(int)Augusta_RES_Fields.MLS_Number]) && !dictMlsPhotos.ContainsKey(arrColumns[(int)Augusta_RES_Fields.MLS_Number]))
                                         {
-                                            dictMlsPhotos.Add(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[(int)Augusta_RES_Fields.Photo_location]);
+                                            dictMlsPhotos.Add(arrColumns[(int)Augusta_RES_Fields.MLS_Number], arrColumns[Array.IndexOf(arrColumnHeaders, "Photo Location")]);
                                         }
                                     }
 
@@ -1910,7 +2022,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
 
                         if (intFeedType == FeedType.Land || intFeedType == FeedType.Residential) { 
                             bBlockPropertyPurge = true;
-                            bFatalError = true;
+                            if (!this.blnIsIncremental)
+                                bFatalError = true;
                         }
                     }
                 }
@@ -2022,7 +2135,8 @@ namespace Meybohm_REAMLS_Consolidation.Model
                     }
                     catch(Exception ex)
                     {
-                        bFatalError = true;
+                        if (!this.blnIsIncremental)
+                            bFatalError = true;
                         this.WriteToLog("<br /><b><i style=\"color:red;\">Error Running MigrateAugustaMySQLData SQL - Details: " + ex.Message + "</i></b>");
                     }
                 }

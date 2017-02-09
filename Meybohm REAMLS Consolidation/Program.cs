@@ -38,7 +38,7 @@ namespace Meybohm_REAMLS_Consolidation
             // Begin Reading Aiken Files
             arrFileList = utilityLibrary.GetFilesList(CityType.Aiken, FeedType.Residential);
             utilityLibrary.ProcessAikenFiles(arrFileList, FeedType.Residential);
-            
+
             arrFileList = utilityLibrary.GetFilesList(CityType.Aiken, FeedType.Land);
             utilityLibrary.ProcessAikenFiles(arrFileList, FeedType.Land);
             
@@ -47,7 +47,7 @@ namespace Meybohm_REAMLS_Consolidation
             
             arrFileList = utilityLibrary.GetFilesList(CityType.Aiken, FeedType.Office);
             utilityLibrary.ProcessAikenFiles(arrFileList, FeedType.Office);
-            
+
             utilityLibrary.WriteToLog("<h3>1) Finished processing Aiken Files.</h3>");
             utilityLibrary.WriteToLog("<h3>2) Starting to process Augusta Files...</h3>");
             
@@ -65,7 +65,7 @@ namespace Meybohm_REAMLS_Consolidation
             utilityLibrary.ProcessAugustaFiles(arrFileList, FeedType.Office);
 
             utilityLibrary.FinishAllTasks();
-            
+
             utilityLibrary.WriteToLog("<h3>2) Finished processing Augusta Files.</h3>");
 
             utilityLibrary.WriteToLog("<h3>3) Migrating Augusta MySQL Data... " + DateTime.Now.ToString("G") + "</h3>");
