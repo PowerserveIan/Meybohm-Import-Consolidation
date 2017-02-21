@@ -328,6 +328,28 @@ namespace Meybohm_REAMLS_Consolidation.Model
         Photo_location
     }
 
+    public enum Augusta_RENT_Fields
+    {
+        MLS_Number,
+        Address,
+        Apx_Total_Heated_SqFt,
+        Bedrooms,
+        City,
+        County,
+        Date_Available,
+        Elementary_School,
+        Full_Baths,
+        Half_Baths,
+        High_School,
+        Middle_School,
+        Property_Description,
+        Rent_Price,
+        Subdivision,
+        State,
+        Zip,
+        Photo_Location
+    }
+
     public enum Augusta_Agent_Fields
     {
         Agent_Email,
