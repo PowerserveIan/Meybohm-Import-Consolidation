@@ -64,6 +64,9 @@ namespace Meybohm_REAMLS_Consolidation
             arrFileList = utilityLibrary.GetFilesList(CityType.Augusta, FeedType.Office);
             utilityLibrary.ProcessAugustaFiles(arrFileList, FeedType.Office);
 
+            // Process combined files.
+            utilityLibrary.ProcessCombinedFiles();
+
             utilityLibrary.FinishAllTasks();
 
             utilityLibrary.WriteToLog("<h3>2) Finished processing Augusta Files.</h3>");

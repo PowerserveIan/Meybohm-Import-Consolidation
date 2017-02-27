@@ -9,6 +9,9 @@ namespace Meybohm_REAMLS_Consolidation.Model
 {
     public class Constant
     {
+        public static readonly string DOWNLOAD_FOLDER = ConfigurationManager.AppSettings["DOWNLOAD_FOLDER"];
+        public static readonly string ARCHIVE_FOLDER = ConfigurationManager.AppSettings["ARCHIVE_FOLDER"];
+
         public static string AIKEN_DOWNLOAD_FOLDER = ConfigurationManager.AppSettings["AIKEN_DOWNLOAD_FOLDER"];
         public static string AUGUSTA_DOWNLOAD_FOLDER = ConfigurationManager.AppSettings["AUGUSTA_DOWNLOAD_FOLDER"];
         public static string AIKEN_ARCHIVE_FOLDER = ConfigurationManager.AppSettings["AIKEN_ARCHIVE_FOLDER"];
@@ -346,6 +349,7 @@ namespace Meybohm_REAMLS_Consolidation.Model
         Rent_Price,
         Subdivision,
         State,
+        Street_Number,
         Zip,
         Photo_Location
     }

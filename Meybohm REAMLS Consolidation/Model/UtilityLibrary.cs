@@ -2182,6 +2182,331 @@ namespace Meybohm_REAMLS_Consolidation.Model
             this.WriteToLog("<br /><b>Offices Consolidated:</b> " + this.intTotalAugustaOffices);
         }
 
+        public void ProcessCombinedFiles()
+        {
+            string aikenOutputPath = Constant.CONSOLIDATION_FOLDER + "Meybohm-Aiken-ALL" + (blnIsIncremental ? "" : "Full") + ".csv";
+            string augustaOutputPath = Constant.CONSOLIDATION_FOLDER + "Meybohm-Augusta-ALL" + (blnIsIncremental ? "" : "Full") + ".csv";
+
+            string[] files = Directory.GetFiles(Constant.DOWNLOAD_FOLDER, "*.csv");
+
+            if (files.Length > 0)
+            {
+                // Create the Aiken output file if it doesn't exist.
+                if (!File.Exists(aikenOutputPath))
+                    File.WriteAllText(aikenOutputPath, Constant.AIKEN_RESIDENTIAL_HEADER + "\n");
+
+                // Create the Augusta output file if it doesn't exist.
+                if (!File.Exists(augustaOutputPath))
+                    File.WriteAllText(augustaOutputPath, Constant.AUGUSTA_RESIDENTIAL_HEADER + "\n");
+            }
+
+            foreach (string path in files)
+            {
+                using (TextFieldParser parser = new TextFieldParser(path))
+                using (StreamWriter aikenWriter = new StreamWriter(aikenOutputPath, true))
+                using (StreamWriter augustaWriter = new StreamWriter(augustaOutputPath, true))
+                {
+                    parser.Delimiters = new string[] { "," };
+
+                    // Get the index of each column in the file.
+                    int[] columns = ParseColumnIndices(parser.ReadLine());
+
+                    // Read the remainder of the lines to parse out data.
+                    string[] fields = null;
+
+                    while ((fields = parser.ReadFields()) != null)
+                    {
+                        // Trim spaces and quotation marks from each field.
+                        for (int i = 0; i < fields.Length; i++)
+                            fields[i] = fields[i].Trim().Trim('\"');
+
+                        // Determine which city type to use.
+                        CityType cityType = fields.Contains("SC") ? CityType.Aiken : CityType.Augusta;
+
+                        // Parse the data from the fields.
+                        string[] data = ParseData(columns, fields, cityType);
+
+                        // Write the data to the correct file.
+                        if (cityType == CityType.Aiken)
+                            WriteAikenRecord(aikenWriter, columns, data);
+                        else
+                            WriteAugustaRecord(augustaWriter, columns, data);
+                    }
+                }
+            }
+        }
+
+        private int[] ParseColumnIndices(string header)
+        {
+            int[] columns = new int[Enum.GetValues(typeof(Augusta_RENT_Fields)).Length];
+
+            // Fields with -1 are not found in the import file.
+            for (int i = 0; i < columns.Length; i++)
+                columns[i] = -1;
+
+            // Split the header fields by commas.
+            string[] fields = header.Split(',');
+
+            // Determine the index of each field based on the index in the header.
+            for (int i = 0; i < fields.Length; i++)
+            {
+                // Ignore spaces and quotation marks surrounding each field.
+                switch (fields[i].Trim().Trim('\"').ToLower())
+                {
+                    case "mls number":
+                        columns[(int)Augusta_RENT_Fields.MLS_Number] = i;
+                        break;
+
+                    case "address":
+                        columns[(int)Augusta_RENT_Fields.Address] = i;
+                        break;
+
+                    case "apx total heated sqft":
+                        columns[(int)Augusta_RENT_Fields.Apx_Total_Heated_SqFt] = i;
+                        break;
+
+                    case "bedrooms":
+                        columns[(int)Augusta_RENT_Fields.Bedrooms] = i;
+                        break;
+
+                    case "city":
+                        columns[(int)Augusta_RENT_Fields.City] = i;
+                        break;
+
+                    case "county":
+                        columns[(int)Augusta_RENT_Fields.County] = i;
+                        break;
+
+                    case "date available":
+                            columns[(int)Augusta_RENT_Fields.Date_Available] = i;
+                        break;
+
+                    case "elementary school":
+                        columns[(int)Augusta_RENT_Fields.Elementary_School] = i;
+                        break;
+
+                    case "full baths":
+                        columns[(int)Augusta_RENT_Fields.Full_Baths] = i;
+                        break;
+
+                    case "half baths":
+                        columns[(int)Augusta_RENT_Fields.Half_Baths] = i;
+                        break;
+
+                    case "high school":
+                        columns[(int)Augusta_RENT_Fields.High_School] = i;
+                        break;
+
+                    case "middle school":
+                        columns[(int)Augusta_RENT_Fields.Middle_School] = i;
+                        break;
+
+                    case "property description":
+                        columns[(int)Augusta_RENT_Fields.Property_Description] = i;
+                        break;
+
+                    case "rent price":
+                        columns[(int)Augusta_RENT_Fields.Rent_Price] = i;
+                        break;
+
+                    case "subdivision":
+                        columns[(int)Augusta_RENT_Fields.Subdivision] = i;
+                        break;
+
+                    case "state":
+                        columns[(int)Augusta_RENT_Fields.State] = i;
+                        break;
+
+                    case "street #":
+                        columns[(int)Augusta_RENT_Fields.Street_Number] = i;
+                        break;
+
+                    case "zip code":
+                        columns[(int)Augusta_RENT_Fields.Zip] = i;
+                        break;
+
+                    case "photo location":
+                        columns[(int)Augusta_RENT_Fields.Photo_Location] = i;
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+
+            return columns;
+        }
+
+        private string[] ParseData(int[] columns, string[] fields, CityType cityType)
+        {
+            string[] data = new string[columns.Length];
+            
+            data[(int)Augusta_RENT_Fields.MLS_Number] = fields[columns[(int)Augusta_RENT_Fields.MLS_Number]];
+            data[(int)Augusta_RENT_Fields.Address] = fields[columns[(int)Augusta_RENT_Fields.Address]];
+            data[(int)Augusta_RENT_Fields.Apx_Total_Heated_SqFt] = fields[columns[(int)Augusta_RENT_Fields.Apx_Total_Heated_SqFt]];
+            data[(int)Augusta_RENT_Fields.Bedrooms] = fields[columns[(int)Augusta_RENT_Fields.Bedrooms]];
+            data[(int)Augusta_RENT_Fields.City] = fields[columns[(int)Augusta_RENT_Fields.City]];
+            data[(int)Augusta_RENT_Fields.County] = fields[columns[(int)Augusta_RENT_Fields.County]];
+            data[(int)Augusta_RENT_Fields.Date_Available] = fields[columns[(int)Augusta_RENT_Fields.Date_Available]];
+            data[(int)Augusta_RENT_Fields.Elementary_School] = fields[columns[(int)Augusta_RENT_Fields.Elementary_School]];
+            data[(int)Augusta_RENT_Fields.Full_Baths] = fields[columns[(int)Augusta_RENT_Fields.Full_Baths]];
+            data[(int)Augusta_RENT_Fields.Half_Baths] = fields[columns[(int)Augusta_RENT_Fields.Half_Baths]];
+            data[(int)Augusta_RENT_Fields.High_School] = fields[columns[(int)Augusta_RENT_Fields.High_School]];
+            data[(int)Augusta_RENT_Fields.Middle_School] = fields[columns[(int)Augusta_RENT_Fields.Middle_School]];
+            data[(int)Augusta_RENT_Fields.Property_Description] = fields[columns[(int)Augusta_RENT_Fields.Property_Description]];
+            data[(int)Augusta_RENT_Fields.Date_Available] = fields[columns[(int)Augusta_RENT_Fields.Date_Available]];
+            data[(int)Augusta_RENT_Fields.Subdivision] = fields[columns[(int)Augusta_RENT_Fields.Subdivision]];
+            data[(int)Augusta_RENT_Fields.State] = fields[columns[(int)Augusta_RENT_Fields.State]];
+            data[(int)Augusta_RENT_Fields.Street_Number] = fields[columns[(int)Augusta_RENT_Fields.Street_Number]];
+            data[(int)Augusta_RENT_Fields.Zip] = fields[columns[(int)Augusta_RENT_Fields.Zip]];
+            data[(int)Augusta_RENT_Fields.Photo_Location] = fields[columns[(int)Augusta_RENT_Fields.Photo_Location]];
+
+            return data;
+        }
+
+        private void WriteAikenRecord(StreamWriter writer, int[] columns, string[] data)
+        {
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.MLS_Number]]);            // MLS Number
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Street_Number]]);         // Street #
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Address]]);               // Address
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Subdivision]]);           // Town/Subdivision
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.City]]);                  // City
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.State]]);                 // State
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Zip]]);                   // Zip Code
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Rent_Price]]);            // List Price
+            writer.Write(",");                                                                       // Listing Office
+            writer.Write(",");                                                                       // LA ID
+            writer.Write("\"Rental\",");                                                             // Property Type
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Property_Description]]);  // Property Description
+            writer.Write(",");                                                                       // Year Built
+            writer.Write(",");                                                                       // Style
+            writer.Write(",");                                                                       // Exterior Features
+            writer.Write(",");                                                                       // Interior Features
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Apx_Total_Heated_SqFt]]); // Apx Heated SqFt
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Full_Baths]]);            // Full Baths
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Half_Baths]]);            // Half Baths
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Bedrooms]]);              // Bedrooms
+            writer.Write(",");                                                                       // Foundation/Basement
+            writer.Write(",");                                                                       // Floors
+            writer.Write(",");                                                                       // Garage
+            writer.Write(",");                                                                       // Attic
+            writer.Write(",");                                                                       // Air Conditioning
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Elementary_School]]);     // Elementary School
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Middle_School]]);         // Middle School
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.High_School]]);           // High School
+            writer.Write(",");                                                                       // Virtual Tour
+            writer.Write(",");                                                                       // Builder Name
+            writer.Write(",");                                                                       // New Construction
+            writer.Write(",");                                                                       // Property Status
+            writer.Write(",");                                                                       // Latitude
+            writer.Write(",");                                                                       // Longitude
+            writer.Write(",");                                                                       // Directions
+            writer.Write(",");                                                                       // List Date
+            writer.Write(",");                                                                       // Total Acres
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.County]]);                // County
+            writer.Write(",");                                                                       // Equestrian
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Photo_Location]]);        // Photo Location
+            writer.Write("\"{0}\"", data[columns[(int)Augusta_RENT_Fields.Date_Available]]);         // Date Available
+            writer.WriteLine();
+        }
+
+        private void WriteAugustaRecord(StreamWriter writer, int[] columns, string[] data)
+        {
+            writer.Write(",");                                                                       // # Fireplaces
+            writer.Write(",");                                                                       // AC/Ventilation
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Address]]);               // Address
+            writer.Write(",");                                                                       // Appliances
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Apx_Total_Heated_SqFt]]); // Apx Total Heated SqFt
+            writer.Write(",");                                                                       // Apx Year Built
+            writer.Write(",");                                                                       // Attic
+            writer.Write(",");                                                                       // Basement
+            writer.Write(",");                                                                       // Bedroom 2 Length
+            writer.Write(",");                                                                       // Bedroom 2 Level
+            writer.Write(",");                                                                       // Bedroom 2 Width
+            writer.Write(",");                                                                       // Bedroom 3 Length
+            writer.Write(",");                                                                       // Bedroom 3 Level
+            writer.Write(",");                                                                       // Bedroom 3 Width
+            writer.Write(",");                                                                       // Bedroom 4 Length
+            writer.Write(",");                                                                       // Bedroom 4 Level
+            writer.Write(",");                                                                       // Bedroom 4 Width
+            writer.Write(",");                                                                       // Bedroom 5 Length
+            writer.Write(",");                                                                       // Bedroom 5 Level
+            writer.Write(",");                                                                       // Bedroom 5 Width
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Bedrooms]]);              // Bedrooms
+            writer.Write(",");                                                                       // Breakfast Rm Length
+            writer.Write(",");                                                                       // Breakfast Rm Level
+            writer.Write(",");                                                                       // Breakfast Rm Width
+            writer.Write(",");                                                                       // Builder Name
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.City]]);                  // City
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.County]]);                // County
+            writer.Write(",");                                                                       // Dining Rm Length
+            writer.Write(",");                                                                       // Dining Rm Level
+            writer.Write(",");                                                                       // Dining Rm Width
+            writer.Write(",");                                                                       // Directions
+            writer.Write(",");                                                                       // Driveway
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Elementary_School]]);     // Elementary School
+            writer.Write(",");                                                                       // Exterior Features
+            writer.Write(",");                                                                       // Exterior Finish
+            writer.Write(",");                                                                       // Extra Rooms
+            writer.Write(",");                                                                       // Family Rm Length
+            writer.Write(",");                                                                       // Family Rm Level
+            writer.Write(",");                                                                       // Family Rm Width
+            writer.Write(",");                                                                       // Financing Type
+            writer.Write(",");                                                                       // Flooring
+            writer.Write(",");                                                                       // Foundation/Basement
+            writer.Write(",");                                                                       // Fuel Source
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Full_Baths]]);            // Full Baths
+            writer.Write(",");                                                                       // Garage/Carport
+            writer.Write(",");                                                                       // Great Rm Length
+            writer.Write(",");                                                                       // Great Rm Level
+            writer.Write(",");                                                                       // Great Rm Width
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Half_Baths]]);            // Half Baths
+            writer.Write(",");                                                                       // Heat Delivery
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.High_School]]);           // High School
+            writer.Write(",");                                                                       // Interior Features
+            writer.Write(",");                                                                       // Kitchen Length
+            writer.Write(",");                                                                       // Kitchen Level
+            writer.Write(",");                                                                       // Kitchen Width
+            writer.Write(",");                                                                       // LA ID
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Rent_Price]]);            // List Price
+            writer.Write(",");                                                                       // Listing Office
+            writer.Write(",");                                                                       // Living Rm Length
+            writer.Write(",");                                                                       // Living Rm Level
+            writer.Write(",");                                                                       // Living Rm Width
+            writer.Write(",");                                                                       // Lot Description
+            writer.Write(",");                                                                       // Lot Size
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Middle_School]]);         // Middle School
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.MLS_Number]]);            // MLS Number
+            writer.Write(",");                                                                       // Neighborhood Amenities
+            writer.Write(",");                                                                       // New Construction
+            writer.Write(",");                                                                       // Owner Bedroom Length
+            writer.Write(",");                                                                       // Owner Bedroom Level
+            writer.Write(",");                                                                       // Owner Bedroom Width
+            writer.Write(",");                                                                       // Photo Count
+            writer.Write(",");                                                                       // Pool
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Property_Description]]);  // Property Description
+            writer.Write(",");                                                                       // Property Status
+            writer.Write("\"Rental\",");                                                             // Property Type
+            writer.Write(",");                                                                       // Roof
+            writer.Write(",");                                                                       // Sewer
+            writer.Write(",");                                                                       // Showing Instructions
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.State]]);                 // State
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Street_Number]]);         // Street #
+            writer.Write(",");                                                                       // Style
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Subdivision]]);           // Subdivision
+            writer.Write(",");                                                                       // Virtual Tour
+            writer.Write(",");                                                                       // Water
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Zip]]);                   // Zip Code
+            writer.Write(",");                                                                       // Total # Rooms
+            writer.Write(",");                                                                       // Total Acres
+            writer.Write(",");                                                                       // Latitude
+            writer.Write(",");                                                                       // Longitude
+            writer.Write(",");                                                                       // Equestrian
+            writer.Write("\"{0}\",", data[columns[(int)Augusta_RENT_Fields.Photo_Location]]);        // Photo Location
+            writer.Write("\"{0}\"", data[columns[(int)Augusta_RENT_Fields.Date_Available]]);         // Date Available
+            writer.WriteLine();
+        }
+
         #endregion
     }
 }
